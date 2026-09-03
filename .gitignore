@@ -1,0 +1,33 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### VS Code ###
+.vscode/
+
+### Claude ###
+.claude/
+
+### env / secrets ###
+.env
+.env.*
+!.env.example
+application-local.yml
+*.pem
+*.key
+*firebase*.json
+*service-account*.json
+
+.DS_Store
