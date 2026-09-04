@@ -47,6 +47,15 @@ src/main/java/com/facecook/
 ├── push/       웹 푸시 구독
 └── common/     공통 응답 포맷, 예외 처리, 세션 유틸
 
+auth/
+├── controller/ HTTP 엔드포인트
+├── service/    인증 흐름과 인증코드 처리
+├── repository/ JPA Repository
+├── entity/     사용자 엔티티와 상태·역할
+├── dto/        인증 요청·응답
+├── mail/       인증메일 발송
+└── support/    인증 내부 보조 기능
+
 src/main/resources/
 ├── application.yml
 └── db/migration/   Flyway 마이그레이션
