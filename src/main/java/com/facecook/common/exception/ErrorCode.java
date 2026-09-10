@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum ErrorCode {
     VALIDATION(HttpStatus.BAD_REQUEST, "요청값이 올바르지 않습니다."),
+    UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "로그인이 필요합니다."),
     ALREADY_REGISTERED(HttpStatus.CONFLICT, "이미 가입된 이메일입니다."),
     NOT_FOUND(HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다."),
     SUSPENDED(HttpStatus.FORBIDDEN, "정지된 계정입니다."),
