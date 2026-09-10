@@ -9,6 +9,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpMethod;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -36,6 +37,12 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
             @NonNull HttpServletResponse response,
             @NonNull Object handler
     ) {
+        if (HttpMethod.OPTIONS.matches(request.getMethod())) {
+            // CORS preflight는 자격증명(쿠키) 없이 오는 게 스펙이라 여기서 막으면
+            // 실제 요청이 나가기도 전에 브라우저가 CORS 에러로 처리해버린다.
+            return true;
+        }
+
         String token = readCookie(request, cookieService.cookieName())
                 .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
 

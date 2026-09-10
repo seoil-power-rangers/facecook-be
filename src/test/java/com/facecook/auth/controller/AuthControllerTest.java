@@ -208,6 +208,17 @@ class AuthControllerTest {
         }
     }
 
+    @Test
+    void allowsCorsPreflightOnSessionProtectedPath() throws Exception {
+        // 세션 쿠키가 없는 preflight(OPTIONS)까지 인터셉터가 막으면, 브라우저가
+        // 실제 요청(GET /me 등)을 보내기도 전에 CORS 에러로 처리해버린다.
+        mockMvc.perform(options("/api/auth/me")
+                        .header(HttpHeaders.ORIGIN, "http://localhost:3000")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000"));
+    }
+
     private Cookie validCookie(Long userId) {
         return new Cookie(COOKIE_NAME, sessionTokenSigner.issue(userId, 604800));
     }

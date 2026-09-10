@@ -36,7 +36,7 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:3001}
   session:
-    secret: ${SESSION_SECRET:local-dev-session-secret-change-me}
+    secret: ${SESSION_SECRET}
     cookie-name: ${SESSION_COOKIE_NAME:FACECOOK_SESSION}
     max-age-seconds: ${SESSION_MAX_AGE_SECONDS:604800}
     secure: ${SESSION_COOKIE_SECURE:false}
