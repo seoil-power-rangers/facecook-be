@@ -6,6 +6,8 @@ import com.facecook.chat.entity.Message;
 import com.facecook.chat.repository.MessageRepository;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
+import com.facecook.cook.entity.MatchInfo;
+import com.facecook.push.service.ParticipantPushNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -45,6 +47,9 @@ class ChatServiceTest {
     @Mock
     private ChatAuthorizationService authorizationService;
 
+    @Mock
+    private ParticipantPushNotificationService pushNotificationService;
+
     private ChatService chatService;
 
     @BeforeEach
@@ -68,6 +73,7 @@ class ChatServiceTest {
     @Test
     void savesMessageDuringOperatingHours() {
         SendChatMessageRequest request = request();
+        givenMatch();
         when(messageRepository.findByClientMessageId(CLIENT_MESSAGE_ID)).thenReturn(Optional.empty());
         when(messageRepository.saveAndFlush(any(Message.class)))
                 .thenAnswer(invocation -> withId(invocation.getArgument(0), 101L));
@@ -79,6 +85,7 @@ class ChatServiceTest {
         assertThat(result.message().messageId()).isEqualTo(101L);
         assertThat(result.message().clientMessageId()).isEqualTo(CLIENT_MESSAGE_ID);
         assertThat(result.message().sentAt()).isEqualTo(LocalDateTime.of(2026, 9, 30, 12, 0));
+        verify(pushNotificationService).chatMessageReceived(2L, MATCH_ID);
     }
 
     @Test
@@ -90,6 +97,7 @@ class ChatServiceTest {
 
         assertThat(result).isEqualTo(new ChatSendResult(ChatMessageResponse.from(existing), false));
         verify(messageRepository, never()).saveAndFlush(any());
+        verify(pushNotificationService, never()).chatMessageReceived(any(), any());
     }
 
     @Test
@@ -103,6 +111,7 @@ class ChatServiceTest {
         ChatSendResult result = chatService.send(USER_ID, MATCH_ID, request());
 
         assertThat(result).isEqualTo(new ChatSendResult(ChatMessageResponse.from(existing), false));
+        verify(pushNotificationService, never()).chatMessageReceived(any(), any());
     }
 
     @Test
@@ -129,6 +138,7 @@ class ChatServiceTest {
     @Test
     void acceptsExactlyAtNineSeoulTime() {
         chatService = serviceAt("2026-09-30T00:00:00Z");
+        givenMatch();
         when(messageRepository.findByClientMessageId(CLIENT_MESSAGE_ID)).thenReturn(Optional.empty());
         when(messageRepository.saveAndFlush(any(Message.class)))
                 .thenAnswer(invocation -> withId(invocation.getArgument(0), 101L));
@@ -140,7 +150,12 @@ class ChatServiceTest {
 
     private ChatService serviceAt(String instant) {
         Clock clock = Clock.fixed(Instant.parse(instant), ZoneOffset.UTC);
-        return new ChatService(messageRepository, authorizationService, clock);
+        return new ChatService(messageRepository, authorizationService, pushNotificationService, clock);
+    }
+
+    private void givenMatch() {
+        when(authorizationService.requireParticipant(MATCH_ID, USER_ID))
+                .thenReturn(MatchInfo.create(USER_ID, 2L, LocalDateTime.of(2026, 9, 30, 11, 0)));
     }
 
     private SendChatMessageRequest request() {

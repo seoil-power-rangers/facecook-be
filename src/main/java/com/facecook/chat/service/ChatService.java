@@ -6,6 +6,8 @@ import com.facecook.chat.entity.Message;
 import com.facecook.chat.repository.MessageRepository;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
+import com.facecook.cook.entity.MatchInfo;
+import com.facecook.push.service.ParticipantPushNotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
@@ -27,6 +29,7 @@ public class ChatService {
 
     private final MessageRepository messageRepository;
     private final ChatAuthorizationService authorizationService;
+    private final ParticipantPushNotificationService pushNotificationService;
     private final Clock clock;
 
     public List<ChatMessageResponse> getHistory(Long userId, Long matchId, Long before, int limit) {
@@ -41,11 +44,15 @@ public class ChatService {
     public ChatSendResult send(Long senderId, Long matchId, SendChatMessageRequest request) {
         LocalDateTime now = now();
         ensureOperatingHours(now.toLocalTime());
-        authorizationService.requireParticipant(matchId, senderId);
+        MatchInfo matchInfo = authorizationService.requireParticipant(matchId, senderId);
 
-        return messageRepository.findByClientMessageId(request.clientMessageId())
+        ChatSendResult result = messageRepository.findByClientMessageId(request.clientMessageId())
                 .map(message -> new ChatSendResult(existingMessage(message, senderId, matchId), false))
                 .orElseGet(() -> saveOrFindExisting(senderId, matchId, request, now));
+        if (result.created()) {
+            pushNotificationService.chatMessageReceived(matchInfo.otherUserId(senderId), matchId);
+        }
+        return result;
     }
 
     private ChatSendResult saveOrFindExisting(
