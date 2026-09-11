@@ -1,0 +1,74 @@
+package com.facecook.cook.entity;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.time.LocalDateTime;
+
+@Getter
+@Entity
+@Table(name = "cook")
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Cook {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "cook_id")
+    private Long id;
+
+    @Column(name = "sender_id", nullable = false)
+    private Long senderId;
+
+    @Column(name = "receiver_id", nullable = false)
+    private Long receiverId;
+
+    @Column(name = "match_id")
+    private Long matchId;
+
+    @Convert(converter = CookStatusConverter.class)
+    @Column(nullable = false, length = 20)
+    private CookStatus status;
+
+    @Column(name = "sent_at", nullable = false)
+    private LocalDateTime sentAt;
+
+    private Cook(Long senderId, Long receiverId, LocalDateTime sentAt) {
+        this.senderId = senderId;
+        this.receiverId = receiverId;
+        this.status = CookStatus.PENDING;
+        this.sentAt = sentAt;
+    }
+
+    public static Cook pending(Long senderId, Long receiverId, LocalDateTime sentAt) {
+        return new Cook(senderId, receiverId, sentAt);
+    }
+
+    public boolean expireIfOverdue(LocalDateTime now) {
+        if (status == CookStatus.PENDING && !sentAt.plusHours(1).isAfter(now)) {
+            status = CookStatus.EXPIRED;
+            return true;
+        }
+        return false;
+    }
+
+    public boolean isPending() {
+        return status == CookStatus.PENDING;
+    }
+
+    public void match(Long matchedId) {
+        this.matchId = matchedId;
+        this.status = CookStatus.MATCHED;
+    }
+
+    public Long otherUserId(Long userId) {
+        return senderId.equals(userId) ? receiverId : senderId;
+    }
+}
