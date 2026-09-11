@@ -176,8 +176,17 @@
 
 | Method | Path | 설명 | 인증 |
 | --- | --- | --- | --- |
+| GET | `/api/push/vapid-public-key` | 브라우저 구독 생성에 사용할 VAPID 공개키 조회 | 참가자 |
 | POST | `/api/push/subscribe` | 브라우저 푸시 구독 정보 등록 (`endpoint, keys`) | 참가자 |
 | DELETE | `/api/push/subscribe` | 현재 사용자의 모든 기기 구독 해제 | 참가자 |
+
+`GET /api/push/vapid-public-key` 응답:
+
+```json
+{
+  "publicKey": "base64url-encoded-vapid-public-key"
+}
+```
 
 `POST /api/push/subscribe` 요청:
 
