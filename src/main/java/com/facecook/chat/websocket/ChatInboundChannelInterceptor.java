@@ -1,0 +1,119 @@
+package com.facecook.chat.websocket;
+
+import com.facecook.auth.entity.User;
+import com.facecook.auth.entity.UserStatus;
+import com.facecook.auth.repository.UserRepository;
+import com.facecook.chat.service.ChatAuthorizationService;
+import com.facecook.common.exception.ApiException;
+import com.facecook.common.exception.ErrorCode;
+import com.facecook.common.session.AuthenticatedUser;
+import com.facecook.common.session.SessionToken;
+import com.facecook.common.session.SessionTokenSigner;
+import lombok.RequiredArgsConstructor;
+import org.springframework.lang.NonNull;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@Component
+@RequiredArgsConstructor
+public class ChatInboundChannelInterceptor implements ChannelInterceptor {
+
+    private static final Pattern CHAT_TOPIC = Pattern.compile("^/topic/chat/(\\d+)$");
+    private static final Pattern CHAT_SEND = Pattern.compile("^/app/chat/(\\d+)/send$");
+
+    private final SessionTokenSigner signer;
+    private final UserRepository userRepository;
+    private final ChatAuthorizationService authorizationService;
+
+    @Override
+    public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+        if (accessor == null || accessor.getCommand() == null) {
+            return message;
+        }
+
+        StompCommand command = accessor.getCommand();
+        if (command == StompCommand.CONNECT || command == StompCommand.SUBSCRIBE || command == StompCommand.SEND) {
+            ChatPrincipal principal = refreshAuthentication(accessor);
+            if (command == StompCommand.SUBSCRIBE) {
+                validateSubscription(accessor.getDestination(), principal.user().userId());
+            } else if (command == StompCommand.SEND) {
+                validateSendDestination(accessor.getDestination(), principal.user().userId());
+            }
+        }
+        return message;
+    }
+
+    private ChatPrincipal refreshAuthentication(StompHeaderAccessor accessor) {
+        Map<String, Object> attributes = accessor.getSessionAttributes();
+        if (attributes == null) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED);
+        }
+        Object rawToken = attributes.get(ChatSessionAttributes.SESSION_TOKEN);
+        if (!(rawToken instanceof String token)) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED);
+        }
+
+        SessionToken sessionToken = signer.verify(token)
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
+        User user = userRepository.findById(sessionToken.userId())
+                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new ApiException(ErrorCode.SUSPENDED);
+        }
+
+        ChatPrincipal principal = new ChatPrincipal(new AuthenticatedUser(
+                user.getId(),
+                user.getEmail(),
+                user.getRole()
+        ));
+        accessor.setUser(principal);
+        attributes.put(ChatSessionAttributes.AUTHENTICATED_USER, principal.user());
+        return principal;
+    }
+
+    private void validateSubscription(String destination, Long userId) {
+        if (destination == null || !destination.startsWith("/topic/chat/")) {
+            return;
+        }
+        Matcher matcher = CHAT_TOPIC.matcher(destination);
+        if (!matcher.matches()) {
+            throw new ApiException(ErrorCode.VALIDATION, "채팅 구독 경로가 올바르지 않습니다.");
+        }
+        Long matchId;
+        try {
+            matchId = Long.valueOf(matcher.group(1));
+        } catch (NumberFormatException exception) {
+            throw new ApiException(ErrorCode.VALIDATION, "채팅 구독 경로가 올바르지 않습니다.");
+        }
+        authorizationService.requireParticipant(matchId, userId);
+    }
+
+    private void validateSendDestination(String destination, Long userId) {
+        if (destination == null) {
+            throw new ApiException(ErrorCode.FORBIDDEN);
+        }
+        Matcher matcher = CHAT_SEND.matcher(destination);
+        if (!matcher.matches()) {
+            // simple broker 목적지(/topic/**)로 직접 보내 DB 저장과 권한 검사를
+            // 우회하는 경로를 차단한다.
+            throw new ApiException(ErrorCode.FORBIDDEN);
+        }
+        Long matchId;
+        try {
+            matchId = Long.valueOf(matcher.group(1));
+        } catch (NumberFormatException exception) {
+            throw new ApiException(ErrorCode.VALIDATION, "채팅 전송 경로가 올바르지 않습니다.");
+        }
+        authorizationService.requireParticipant(matchId, userId);
+    }
+}
