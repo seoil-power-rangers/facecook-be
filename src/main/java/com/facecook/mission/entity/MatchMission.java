@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 @Table(name = "match_info")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MatchMission {
-    private static final int COMPLETED_STEP = 4;
+    public static final int COMPLETED_STEP = 4;
 
     @Id
     @Column(name = "match_id")

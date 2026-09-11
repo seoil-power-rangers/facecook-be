@@ -153,6 +153,25 @@
 | --- | --- | --- | --- |
 | GET | `/api/admin/stats` | 가입자수/활성사용자/콕사용량/매칭수/미션완료수/대기신고수 | 관리자 |
 
+응답:
+
+```json
+{
+  "totalUsers": 214,
+  "activeToday": 200,
+  "totalCooks": 487,
+  "totalMatches": 63,
+  "missionCleared": 21,
+  "pendingReports": 2
+}
+```
+
+- `activeToday`는 기본적으로 `users.status = ACTIVE`인 사용자 수다. 현재
+  `last_active_at` 갱신 로직이 없어 실제 당일 활동 수를 신뢰할 수 없기 때문이다.
+- `ADMIN_STATS_ACTIVE_USER_CRITERION=LAST_ACTIVE_TODAY`로 설정하면
+  `Asia/Seoul` 기준 당일 `last_active_at`이 기록된 사용자 수를 집계한다. 이 기준은
+  사용자 활동 시각 갱신 로직을 도입한 뒤 사용한다.
+
 ## 8. 알림 (웹 푸시)
 
 | Method | Path | 설명 | 인증 |
