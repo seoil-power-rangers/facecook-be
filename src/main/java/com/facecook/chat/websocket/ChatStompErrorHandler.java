@@ -16,6 +16,18 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 
+/**
+ * STOMP 처리 실패를 {@code {code, message}} JSON body의 ERROR frame으로 변환한다.
+ *
+ * 이 클래스가 {@link org.springframework.web.socket.messaging.StompSubProtocolErrorHandler}를
+ * 상속해서 처리하는 건 프레임 디코딩 같은 "프로토콜 레벨" 오류뿐이다.
+ * {@code @MessageMapping} 핸들러(예: {@code ChatMessageController.send})가 던지는
+ * 비즈니스 예외(CLOSED, FORBIDDEN 등)는 별도 스레드(inboundChannel executor)에서
+ * {@link org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler}가
+ * 처리하는데, 여기서 던진 예외는 이 클래스를 절대 거치지 않고 조용히 로그만 찍히고
+ * 사라진다 — 그래서 handleApiException 핸들러가 있는 컨트롤러들이
+ * {@link #buildErrorFrame}을 직접 호출해서 clientOutboundChannel로 보내야 한다.
+ */
 @Component
 @RequiredArgsConstructor
 public class ChatStompErrorHandler extends org.springframework.web.socket.messaging.StompSubProtocolErrorHandler {
@@ -24,6 +36,17 @@ public class ChatStompErrorHandler extends org.springframework.web.socket.messag
 
     @Override
     public Message<byte[]> handleClientMessageProcessingError(Message<byte[]> clientMessage, Throwable exception) {
+        return buildErrorFrame(exception, null);
+    }
+
+    /**
+     * ERROR frame 메시지를 만든다. {@code sessionId}를 넘기면
+     * {@code clientOutboundChannel}로 직접 보낼 때 어느 WebSocket 세션으로
+     * 전달할지 알 수 있게 {@code simpSessionId} 헤더까지 채운다(handler 메서드
+     * 예외 경로용). protocol 레벨 경로(null)는 Spring이 세션을 이미 알고 있어서
+     * 필요 없다.
+     */
+    public Message<byte[]> buildErrorFrame(Throwable exception, String sessionId) {
         ErrorResponse error = errorResponse(exception);
         byte[] payload = json(error);
 
@@ -31,6 +54,9 @@ public class ChatStompErrorHandler extends org.springframework.web.socket.messag
         accessor.setMessage(error.code());
         accessor.setContentType(org.springframework.util.MimeTypeUtils.APPLICATION_JSON);
         accessor.setContentLength(payload.length);
+        if (sessionId != null) {
+            accessor.setSessionId(sessionId);
+        }
         accessor.setLeaveMutable(true);
         return MessageBuilder.createMessage(payload, accessor.getMessageHeaders());
     }
