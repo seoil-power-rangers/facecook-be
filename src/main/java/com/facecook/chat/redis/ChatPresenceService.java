@@ -38,6 +38,18 @@ public class ChatPresenceService {
         }
     }
 
+    public boolean isConnected(Long userId) {
+        try {
+            Long connectionCount = redisTemplate.opsForSet().size(key(userId));
+            return connectionCount != null && connectionCount > 0L;
+        } catch (DataAccessException exception) {
+            // Redis 장애 시 접속 중이라고 잘못 판단해 알림을 누락하기보다
+            // 미접속으로 간주하고 best-effort 푸시 발송을 시도한다.
+            log.warn("WebSocket 접속 여부 조회에 실패했습니다. userId={}", userId, exception);
+            return false;
+        }
+    }
+
     private String key(Long userId) {
         return PRESENCE_KEY_PREFIX + userId;
     }

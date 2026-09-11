@@ -41,6 +41,10 @@ app:
     max-age-seconds: ${SESSION_MAX_AGE_SECONDS:604800}
     secure: ${SESSION_COOKIE_SECURE:false}
     same-site: ${SESSION_COOKIE_SAME_SITE:Lax}
+  push:
+    vapid:
+      public-key: ${VAPID_PUBLIC_KEY:}
+      private-key: ${VAPID_PRIVATE_KEY:}
   admin:
     stats:
       # STATUS is the default until last_active_at is updated by user activity.

@@ -14,6 +14,7 @@ import com.facecook.cook.repository.RecentMessageProjection;
 import com.facecook.profile.dto.CreateProfileRequest;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
+import com.facecook.push.service.ParticipantPushNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,6 +56,9 @@ class CookServiceTest {
     @Mock
     private ProfileRepository profileRepository;
 
+    @Mock
+    private ParticipantPushNotificationService pushNotificationService;
+
     private CookService cookService;
 
     @BeforeEach
@@ -64,6 +68,7 @@ class CookServiceTest {
                 matchInfoRepository,
                 cookUserRepository,
                 profileRepository,
+                pushNotificationService,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
@@ -130,6 +135,7 @@ class CookServiceTest {
 
         assertThat(response.status()).isEqualTo("pending");
         verify(cookRepository).saveAndFlush(any(Cook.class));
+        verify(pushNotificationService).cookReceived(2L);
     }
 
     @Test
@@ -163,7 +169,8 @@ class CookServiceTest {
     void eventWideDailyLimitGrowsWithEventDay() {
         Clock secondDay = Clock.fixed(Instant.parse("2026-10-01T03:00:00Z"), ZoneOffset.UTC);
         CookService secondDayService = new CookService(
-                cookRepository, matchInfoRepository, cookUserRepository, profileRepository, secondDay
+                cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
+                pushNotificationService, secondDay
         );
         givenLockedUsers(1L, 2L);
         when(cookRepository.countBySentAtGreaterThanEqualAndSentAtLessThan(
@@ -178,7 +185,8 @@ class CookServiceTest {
     void eventWideDailyLimitDoesNotApplyOutsideEventWindow() {
         Clock beforeEvent = Clock.fixed(Instant.parse("2026-01-01T03:00:00Z"), ZoneOffset.UTC);
         CookService devService = new CookService(
-                cookRepository, matchInfoRepository, cookUserRepository, profileRepository, beforeEvent
+                cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
+                pushNotificationService, beforeEvent
         );
         givenLockedUsers(1L, 2L);
         when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -232,6 +240,9 @@ class CookServiceTest {
         assertThat(matchCaptor.getValue().getUserAId()).isEqualTo(1L);
         assertThat(matchCaptor.getValue().getUserBId()).isEqualTo(2L);
         assertThat(matchCaptor.getValue().getMatchedAt()).isEqualTo(EVENT_NOW);
+        verify(pushNotificationService).matchCreated(1L, 20L);
+        verify(pushNotificationService).matchCreated(2L, 20L);
+        verify(pushNotificationService, never()).cookReceived(any());
     }
 
     @Test

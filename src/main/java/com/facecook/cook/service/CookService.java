@@ -17,6 +17,7 @@ import com.facecook.cook.repository.MatchInfoRepository;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
+import com.facecook.push.service.ParticipantPushNotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -55,6 +56,7 @@ public class CookService {
     private final MatchInfoRepository matchInfoRepository;
     private final CookUserRepository cookUserRepository;
     private final ProfileRepository profileRepository;
+    private final ParticipantPushNotificationService pushNotificationService;
     private final Clock clock;
 
     @Transactional
@@ -94,7 +96,12 @@ public class CookService {
             throw new ApiException(ErrorCode.DUPLICATE, exception);
         }
 
-        reverseCook.filter(Cook::isPending).ifPresent(reverse -> createMatch(cook, reverse, now));
+        Optional<Cook> pendingReverseCook = reverseCook.filter(Cook::isPending);
+        if (pendingReverseCook.isPresent()) {
+            createMatch(cook, pendingReverseCook.get(), now);
+        } else {
+            pushNotificationService.cookReceived(receiverId);
+        }
         return SendCookResponse.from(cook);
     }
 
@@ -176,6 +183,8 @@ public class CookService {
         );
         cook.match(matchInfo.getId());
         reverseCook.match(matchInfo.getId());
+        pushNotificationService.matchCreated(matchInfo.getUserAId(), matchInfo.getId());
+        pushNotificationService.matchCreated(matchInfo.getUserBId(), matchInfo.getId());
     }
 
     private CookItemResponse toCookItem(
