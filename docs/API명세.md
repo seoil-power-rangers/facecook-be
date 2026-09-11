@@ -110,6 +110,10 @@
 | --- | --- | --- | --- |
 | GET | `/api/matches/{matchId}/messages?before={messageId}&limit=50` | 메시지 히스토리 조회 (페이지네이션) | 참가자(해당 매칭 당사자만) |
 
+- 응답은 `messageId` 내림차순 배열이며, 다음 페이지는 마지막 항목의
+  `messageId`를 `before`로 보낸다. `limit` 기본값은 50, 허용 범위는 1~100이다.
+- 메시지 항목: `{ messageId, matchId, senderId, content, clientMessageId, sentAt }`
+
 ### WebSocket (STOMP)
 
 | 구분 | 목적지 | 설명 |
@@ -117,8 +121,13 @@
 | CONNECT | `/ws` | 세션 쿠키로 인증, 연결 시 Redis 접속자 명단에 등록 |
 | SUBSCRIBE | `/topic/chat/{matchId}` | 해당 채팅방 메시지 실시간 수신 — **구독 시점에 이 matchId 당사자인지 서버가 검증** |
 | SEND | `/app/chat/{matchId}/send` | 메시지 전송, body: `{ content, clientMessageId }` |
+| SUBSCRIBE | `/user/queue/chat-acks` | DB 저장이 끝난 SEND 결과 수신. 재전송이면 기존 메시지를 동일한 형식으로 반환 |
 | — | — | 운영시간(09:00~18:00) 외 전송 시 `CLOSED` 에러 반환 |
 | DISCONNECT | — | 연결 종료 시 Redis 접속자 명단에서 제거 |
+
+`/topic/chat/{matchId}`와 `/user/queue/chat-acks`의 메시지 형식은 REST 메시지
+항목과 같다. STOMP 처리 실패는 ERROR frame의 JSON body
+`{ "code": "ERROR_CODE", "message": "..." }`로 반환한다.
 
 ## 5. 미션
 
