@@ -10,6 +10,8 @@ import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 
 public interface MatchMissionRepository extends JpaRepository<MatchMission, Long> {
+    long countByCurrentStepGreaterThanEqual(int completedStep);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select mission from MatchMission mission where mission.matchId = :matchId")
     Optional<MatchMission> findByIdForUpdate(@Param("matchId") Long matchId);
