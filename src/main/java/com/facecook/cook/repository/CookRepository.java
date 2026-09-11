@@ -22,4 +22,10 @@ public interface CookRepository extends JpaRepository<Cook, Long> {
             LocalDateTime startInclusive,
             LocalDateTime endExclusive
     );
+
+    /** 특정 유저에 한정하지 않는, 그 시간대에 전체 참가자가 보낸 콕 수(행사 전체 총량 제한용). */
+    long countBySentAtGreaterThanEqualAndSentAtLessThan(
+            LocalDateTime startInclusive,
+            LocalDateTime endExclusive
+    );
 }

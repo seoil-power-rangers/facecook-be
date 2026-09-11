@@ -133,6 +133,63 @@ class CookServiceTest {
     }
 
     @Test
+    void rejectsCookWhenEventWideDailyLimitReached() {
+        givenLockedUsers(1L, 2L);
+        when(cookRepository.countBySentAtGreaterThanEqualAndSentAtLessThan(
+                LocalDateTime.of(2026, 9, 30, 0, 0),
+                LocalDateTime.of(2026, 10, 1, 0, 0)
+        )).thenReturn(3_000L);
+
+        assertErrorCode(() -> cookService.send(1L, new SendCookRequest(2L)), ErrorCode.EVENT_LIMIT);
+
+        verify(cookRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void allowsCookJustBelowEventWideDailyLimit() {
+        givenLockedUsers(1L, 2L);
+        when(cookRepository.countBySentAtGreaterThanEqualAndSentAtLessThan(
+                LocalDateTime.of(2026, 9, 30, 0, 0),
+                LocalDateTime.of(2026, 10, 1, 0, 0)
+        )).thenReturn(2_999L);
+        when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = cookService.send(1L, new SendCookRequest(2L));
+
+        assertThat(response.status()).isEqualTo("pending");
+    }
+
+    @Test
+    void eventWideDailyLimitGrowsWithEventDay() {
+        Clock secondDay = Clock.fixed(Instant.parse("2026-10-01T03:00:00Z"), ZoneOffset.UTC);
+        CookService secondDayService = new CookService(
+                cookRepository, matchInfoRepository, cookUserRepository, profileRepository, secondDay
+        );
+        givenLockedUsers(1L, 2L);
+        when(cookRepository.countBySentAtGreaterThanEqualAndSentAtLessThan(
+                LocalDateTime.of(2026, 10, 1, 0, 0),
+                LocalDateTime.of(2026, 10, 2, 0, 0)
+        )).thenReturn(6_000L);
+
+        assertErrorCode(() -> secondDayService.send(1L, new SendCookRequest(2L)), ErrorCode.EVENT_LIMIT);
+    }
+
+    @Test
+    void eventWideDailyLimitDoesNotApplyOutsideEventWindow() {
+        Clock beforeEvent = Clock.fixed(Instant.parse("2026-01-01T03:00:00Z"), ZoneOffset.UTC);
+        CookService devService = new CookService(
+                cookRepository, matchInfoRepository, cookUserRepository, profileRepository, beforeEvent
+        );
+        givenLockedUsers(1L, 2L);
+        when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = devService.send(1L, new SendCookRequest(2L));
+
+        assertThat(response.status()).isEqualTo("pending");
+        verify(cookRepository, never()).countBySentAtGreaterThanEqualAndSentAtLessThan(any(), any());
+    }
+
+    @Test
     void countsDailyUsageBetweenKoreaMidnights() {
         givenLockedUsers(1L, 2L);
         when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));
