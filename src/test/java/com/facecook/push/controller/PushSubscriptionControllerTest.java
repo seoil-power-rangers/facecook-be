@@ -32,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -120,6 +121,23 @@ class PushSubscriptionControllerTest {
     @Test
     void requiresAuthentication() throws Exception {
         mockMvc.perform(delete("/api/push/subscribe"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    void returnsVapidPublicKey() throws Exception {
+        givenAuthenticatedUser(1L);
+        when(pushSubscriptionService.getVapidPublicKey()).thenReturn("test-public-key");
+
+        mockMvc.perform(get("/api/push/vapid-public-key").cookie(validCookie(1L)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.publicKey").value("test-public-key"));
+    }
+
+    @Test
+    void vapidPublicKeyRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/push/vapid-public-key"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }

@@ -1,5 +1,6 @@
 package com.facecook.push.service;
 
+import com.facecook.push.config.VapidProperties;
 import com.facecook.push.dto.PushSubscriptionRequest;
 import com.facecook.push.entity.PushSubscription;
 import com.facecook.push.repository.PushSubscriptionRepository;
@@ -11,6 +12,15 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class PushSubscriptionService {
     private final PushSubscriptionRepository pushSubscriptionRepository;
+    private final VapidProperties vapidProperties;
+
+    public String getVapidPublicKey() {
+        String publicKey = vapidProperties.publicKey();
+        if (publicKey == null || publicKey.isBlank()) {
+            throw new IllegalStateException("VAPID 공개키가 설정되지 않았습니다.");
+        }
+        return publicKey;
+    }
 
     @Transactional
     public void subscribe(Long userId, PushSubscriptionRequest request) {

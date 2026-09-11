@@ -1,5 +1,6 @@
 package com.facecook.push.service;
 
+import com.facecook.push.config.VapidProperties;
 import com.facecook.push.dto.PushSubscriptionRequest;
 import com.facecook.push.entity.PushSubscription;
 import com.facecook.push.repository.PushSubscriptionRepository;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -22,7 +24,26 @@ class PushSubscriptionServiceTest {
     @BeforeEach
     void setUp() {
         pushSubscriptionRepository = mock(PushSubscriptionRepository.class);
-        pushSubscriptionService = new PushSubscriptionService(pushSubscriptionRepository);
+        pushSubscriptionService = new PushSubscriptionService(
+                pushSubscriptionRepository,
+                new VapidProperties("test-public-key", "test-private-key")
+        );
+    }
+
+    @Test
+    void returnsConfiguredVapidPublicKey() {
+        assertThat(pushSubscriptionService.getVapidPublicKey()).isEqualTo("test-public-key");
+    }
+
+    @Test
+    void rejectsMissingVapidPublicKey() {
+        PushSubscriptionService serviceWithoutKey = new PushSubscriptionService(
+                pushSubscriptionRepository,
+                new VapidProperties("", "test-private-key")
+        );
+
+        assertThatThrownBy(serviceWithoutKey::getVapidPublicKey)
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
