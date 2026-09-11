@@ -1,0 +1,21 @@
+package com.facecook.cook.dto;
+
+import com.facecook.cook.entity.MatchInfo;
+import com.facecook.profile.dto.ProfileResponse;
+
+import java.time.LocalDateTime;
+
+public record MatchResponse(
+        Long matchId,
+        LocalDateTime matchedAt,
+        ProfileResponse partner,
+        RecentMessageResponse recentMessage
+) {
+    public static MatchResponse from(
+            MatchInfo matchInfo,
+            ProfileResponse partner,
+            RecentMessageResponse recentMessage
+    ) {
+        return new MatchResponse(matchInfo.getId(), matchInfo.getMatchedAt(), partner, recentMessage);
+    }
+}
