@@ -158,7 +158,22 @@
 | Method | Path | 설명 | 인증 |
 | --- | --- | --- | --- |
 | POST | `/api/push/subscribe` | 브라우저 푸시 구독 정보 등록 (`endpoint, keys`) | 참가자 |
-| DELETE | `/api/push/subscribe` | 구독 해제 | 참가자 |
+| DELETE | `/api/push/subscribe` | 현재 사용자의 모든 기기 구독 해제 | 참가자 |
+
+`POST /api/push/subscribe` 요청:
+
+```json
+{
+  "endpoint": "https://push.example/subscription",
+  "keys": {
+    "p256dh": "browser-public-key",
+    "auth": "browser-auth-secret"
+  }
+}
+```
+
+- 동일한 `(user_id, endpoint)`를 재등록하면 `keys`를 갱신한다.
+- 등록과 해제 성공 응답은 모두 `204 No Content`이다.
 
 발송 전용 엔드포인트는 없음 — 콕/매칭/메시지 이벤트 발생 시 서버가 내부적으로 판단해 자동 발송(기능명세 8번 참고).
 
