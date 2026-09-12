@@ -38,6 +38,9 @@ management:
       enabled: false
 
 app:
+  chat:
+    open-time: ${CHAT_OPEN_TIME:09:00}
+    close-time: ${CHAT_CLOSE_TIME:18:00}
   mail:
     from: ${SMTP_FROM:${SMTP_USER:}}
   cors:
