@@ -21,6 +21,7 @@ public class WebConfig implements WebMvcConfigurer {
             "/api/auth/request-code",
             "/api/auth/verify-signup",
             "/api/auth/verify-login",
+            "/api/auth/login",
             "/api/auth/logout"
     };
 

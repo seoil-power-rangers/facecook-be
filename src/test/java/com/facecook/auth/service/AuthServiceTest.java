@@ -1,6 +1,7 @@
 package com.facecook.auth.service;
 
 import com.facecook.auth.dto.AuthVerificationResponse;
+import com.facecook.auth.dto.PasswordLoginRequest;
 import com.facecook.auth.dto.RequestCodeRequest;
 import com.facecook.auth.dto.VerificationPurpose;
 import com.facecook.auth.dto.VerifyLoginRequest;
@@ -14,6 +15,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.ArgumentCaptor;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -35,11 +39,14 @@ class AuthServiceTest {
     @Mock
     private VerificationCodeService verificationCodeService;
 
+    private PasswordEncoder passwordEncoder;
+
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, verificationCodeService);
+        passwordEncoder = new BCryptPasswordEncoder(4);
+        authService = new AuthService(userRepository, verificationCodeService, passwordEncoder);
     }
 
     @Test
@@ -84,6 +91,7 @@ class AuthServiceTest {
         VerifySignupRequest request = new VerifySignupRequest(
                 "user@example.com",
                 "123456",
+                "password123",
                 Set.of("service")
         );
 
@@ -100,6 +108,7 @@ class AuthServiceTest {
         AuthVerificationResponse response = authService.verifySignup(new VerifySignupRequest(
                 " User@Example.com ",
                 "123456",
+                "password123",
                 Set.of("service", "privacy", "photo")
         ));
 
@@ -108,6 +117,10 @@ class AuthServiceTest {
         verify(verificationCodeService).consume("user@example.com", VerificationPurpose.SIGNUP);
         assertThat(response.email()).isEqualTo("user@example.com");
         assertThat(response.role()).isEqualTo("participant");
+        ArgumentCaptor<User> savedUser = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(savedUser.capture());
+        assertThat(savedUser.getValue().getPasswordHash()).isNotEqualTo("password123");
+        assertThat(passwordEncoder.matches("password123", savedUser.getValue().getPasswordHash())).isTrue();
     }
 
     @Test
@@ -135,8 +148,71 @@ class AuthServiceTest {
         );
     }
 
+    @Test
+    void logsInActiveParticipantWithPassword() {
+        User user = participantWithPassword("user@example.com", "password123");
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+
+        AuthVerificationResponse response = authService.login(
+                new PasswordLoginRequest(" USER@example.com ", "password123")
+        );
+
+        assertThat(response.email()).isEqualTo("user@example.com");
+        assertThat(response.role()).isEqualTo("participant");
+    }
+
+    @Test
+    void rejectsPasswordLoginForUnknownEmail() {
+        when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
+
+        assertErrorCode(
+                () -> authService.login(new PasswordLoginRequest("missing@example.com", "password123")),
+                ErrorCode.INVALID_CREDENTIALS
+        );
+    }
+
+    @Test
+    void rejectsPasswordLoginForWrongPassword() {
+        User user = participantWithPassword("user@example.com", "password123");
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+
+        assertErrorCode(
+                () -> authService.login(new PasswordLoginRequest("user@example.com", "wrong-password")),
+                ErrorCode.INVALID_CREDENTIALS
+        );
+    }
+
+    @Test
+    void rejectsPasswordLoginForLegacyAccountWithoutPassword() {
+        User user = participant("user@example.com");
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+
+        assertErrorCode(
+                () -> authService.login(new PasswordLoginRequest("user@example.com", "password123")),
+                ErrorCode.INVALID_CREDENTIALS
+        );
+    }
+
+    @Test
+    void rejectsPasswordLoginForSuspendedParticipant() {
+        User user = participantWithPassword("user@example.com", "password123");
+        user.suspend();
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+
+        assertErrorCode(
+                () -> authService.login(new PasswordLoginRequest("user@example.com", "password123")),
+                ErrorCode.SUSPENDED
+        );
+    }
+
     private User participant(String email) {
         return User.createParticipant(email, LocalDateTime.now());
+    }
+
+    private User participantWithPassword(String email, String password) {
+        User user = participant(email);
+        user.setPassword(passwordEncoder.encode(password));
+        return user;
     }
 
     private void assertErrorCode(Runnable action, ErrorCode expected) {

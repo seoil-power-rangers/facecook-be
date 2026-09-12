@@ -49,7 +49,7 @@ src/main/java/com/facecook/
 
 auth/
 ├── controller/ HTTP 엔드포인트
-├── service/    인증 흐름과 인증코드 처리
+├── service/    이메일 인증·비밀번호 로그인 흐름
 ├── repository/ JPA Repository
 ├── entity/     사용자 엔티티와 상태·역할
 ├── dto/        인증 요청·응답

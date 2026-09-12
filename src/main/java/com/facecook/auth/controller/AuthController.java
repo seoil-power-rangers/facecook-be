@@ -1,6 +1,7 @@
 package com.facecook.auth.controller;
 
 import com.facecook.auth.dto.AuthVerificationResponse;
+import com.facecook.auth.dto.PasswordLoginRequest;
 import com.facecook.auth.dto.RequestCodeRequest;
 import com.facecook.auth.dto.RequestCodeResponse;
 import com.facecook.auth.dto.VerifyLoginRequest;
@@ -48,6 +49,16 @@ public class AuthController {
             HttpServletResponse response
     ) {
         AuthVerificationResponse verification = authService.verifyLogin(request);
+        sessionCookieService.issue(response, verification.userId());
+        return ResponseEntity.ok(verification);
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<AuthVerificationResponse> login(
+            @Valid @RequestBody PasswordLoginRequest request,
+            HttpServletResponse response
+    ) {
+        AuthVerificationResponse verification = authService.login(request);
         sessionCookieService.issue(response, verification.userId());
         return ResponseEntity.ok(verification);
     }

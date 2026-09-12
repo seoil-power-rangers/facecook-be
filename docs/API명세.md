@@ -11,8 +11,9 @@
 | Method | Path | 설명 | 인증 |
 | --- | --- | --- | --- |
 | POST | `/api/auth/request-code` | 이메일 인증코드 발급 (`purpose: signup\|login`) | 공개 |
-| POST | `/api/auth/verify-signup` | 인증코드 확인 + 회원가입 (`email, code, agreedTerms[]`) | 공개 |
-| POST | `/api/auth/verify-login` | 인증코드 확인 + 로그인 | 공개 |
+| POST | `/api/auth/verify-signup` | 인증코드 확인 + 비밀번호 설정 + 회원가입 (`email, code, password, agreedTerms[]`) | 공개 |
+| POST | `/api/auth/login` | 참가자 이메일·비밀번호 로그인 | 공개 |
+| POST | `/api/auth/verify-login` | 인증코드 확인 + 로그인 (기존 OTP 호환 경로) | 공개 |
 | POST | `/api/auth/admin-login` | 관리자 로그인 (`adminId, password`) | 공개 |
 | GET | `/api/auth/me` | 현재 세션 정보 조회 | 참가자/관리자 |
 | POST | `/api/auth/logout` | 로그아웃 | 참가자/관리자 |
@@ -46,9 +47,12 @@
 {
   "email": "user@example.com",
   "code": "123456",
+  "password": "password123",
   "agreedTerms": ["service", "privacy"]
 }
 ```
+
+- `password`: 8자 이상. 서버에는 BCrypt 해시만 저장한다.
 
 `agreedTerms` 값:
 
@@ -58,7 +62,22 @@
 | `privacy` | 필수 | 개인정보 수집·이용 동의 |
 | `photo` | 선택 | 프로필 사진 업로드 동의 |
 
-### 로그인 인증 요청/응답
+### 비밀번호 로그인 요청/응답
+
+`POST /api/auth/login`
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+- 이메일이 없거나 비밀번호가 틀리거나 기존 계정에 비밀번호가 설정되지 않은 경우 모두
+  `INVALID_CREDENTIALS`를 반환한다.
+- 정지 계정은 `SUSPENDED`를 반환한다.
+
+### 기존 OTP 로그인 요청/응답
 
 `POST /api/auth/verify-login`
 
@@ -69,7 +88,7 @@
 }
 ```
 
-`verify-signup`, `verify-login` 성공 응답:
+`verify-signup`, `login`, `verify-login` 성공 응답:
 
 ```json
 {
@@ -79,7 +98,7 @@
 }
 ```
 
-세션 쿠키 발급은 로그인/세션 구현 시 위 응답과 함께 추가한다.
+성공 응답에는 기존과 동일한 HttpOnly 세션 쿠키가 함께 발급된다.
 
 ## 2. 프로필
 
@@ -214,6 +233,7 @@
 | `SUSPENDED` | 정지된 계정 |
 | `VALIDATION` | 요청값 오류 |
 | `NOT_FOUND` | 대상 없음 |
+| `INVALID_CREDENTIALS` | 참가자 이메일 또는 비밀번호 불일치(비밀번호 미설정 기존 계정 포함) |
 
 ## 10. 이번 문서 범위 밖
 
