@@ -30,6 +30,13 @@ spring:
   flyway:
     enabled: true
 
+management:
+  health:
+    mail:
+      # ALB 헬스체크(/actuator/health)가 SMTP(Brevo) 연결 상태까지 반영하지 않게 제외한다.
+      # 메일 발송 실패는 회원가입 인증 흐름에만 영향을 주고, 서버 자체가 죽은 건 아니다.
+      enabled: false
+
 app:
   mail:
     from: ${SMTP_FROM:${SMTP_USER:}}
