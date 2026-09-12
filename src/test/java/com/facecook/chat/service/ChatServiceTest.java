@@ -1,5 +1,6 @@
 package com.facecook.chat.service;
 
+import com.facecook.chat.config.ChatOperatingHoursProperties;
 import com.facecook.chat.dto.ChatMessageResponse;
 import com.facecook.chat.dto.SendChatMessageRequest;
 import com.facecook.chat.entity.Message;
@@ -22,6 +23,7 @@ import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -150,7 +152,9 @@ class ChatServiceTest {
 
     private ChatService serviceAt(String instant) {
         Clock clock = Clock.fixed(Instant.parse(instant), ZoneOffset.UTC);
-        return new ChatService(messageRepository, authorizationService, pushNotificationService, clock);
+        ChatOperatingHoursProperties operatingHoursProperties =
+                new ChatOperatingHoursProperties(LocalTime.of(9, 0), LocalTime.of(18, 0));
+        return new ChatService(messageRepository, authorizationService, pushNotificationService, operatingHoursProperties, clock);
     }
 
     private void givenMatch() {

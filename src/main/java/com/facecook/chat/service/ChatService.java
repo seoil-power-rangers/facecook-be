@@ -1,5 +1,6 @@
 package com.facecook.chat.service;
 
+import com.facecook.chat.config.ChatOperatingHoursProperties;
 import com.facecook.chat.dto.ChatMessageResponse;
 import com.facecook.chat.dto.SendChatMessageRequest;
 import com.facecook.chat.entity.Message;
@@ -24,12 +25,11 @@ import java.util.List;
 public class ChatService {
 
     private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
-    private static final LocalTime OPEN_TIME = LocalTime.of(9, 0);
-    private static final LocalTime CLOSE_TIME = LocalTime.of(18, 0);
 
     private final MessageRepository messageRepository;
     private final ChatAuthorizationService authorizationService;
     private final ParticipantPushNotificationService pushNotificationService;
+    private final ChatOperatingHoursProperties operatingHoursProperties;
     private final Clock clock;
 
     public List<ChatMessageResponse> getHistory(Long userId, Long matchId, Long before, int limit) {
@@ -89,7 +89,7 @@ public class ChatService {
     }
 
     private void ensureOperatingHours(LocalTime time) {
-        if (time.isBefore(OPEN_TIME) || !time.isBefore(CLOSE_TIME)) {
+        if (time.isBefore(operatingHoursProperties.openTime()) || !time.isBefore(operatingHoursProperties.closeTime())) {
             throw new ApiException(ErrorCode.CLOSED);
         }
     }
