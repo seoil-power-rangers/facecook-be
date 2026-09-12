@@ -18,6 +18,10 @@ public record VerifySignupRequest(
         @Pattern(regexp = "\\d{6}", message = "인증코드는 6자리 숫자여야 합니다.")
         String code,
 
+        @NotBlank(message = "비밀번호를 입력해주세요.")
+        @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
+        String password,
+
         @NotNull(message = "약관 동의 항목을 입력해주세요.")
         Set<String> agreedTerms
 ) {

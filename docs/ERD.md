@@ -13,6 +13,7 @@
 | `report.reason` | "카테고리\n상세"로 한 컬럼에 합쳐 저장 | **`reason`/`detail` 컬럼 분리** | 새로 짜는 거라 굳이 문자열 합치기 안 해도 됨 |
 | 메시지 멱등성 | 없음 | **`message.client_message_id` 추가** | ACK 미수신 시 재전송해도 중복 저장 안 되게 |
 | 웹 푸시 | 없음 | **`push_subscription` 테이블 신설** | |
+| 참가자 비밀번호 | 이메일 OTP 로그인만 사용 | **`users.password_hash`에 BCrypt 해시 저장** | 최초 가입 때 이메일을 인증하고 이후에는 비밀번호로 로그인 |
 
 **추가 확인 필요한 것 (팀 논의 필요):** 관리자 계정을 `users` 테이블에 실제 row로 둘지. 예전 Supabase 코드는 관리자가 `.env` 공유 계정이라 `users`에 없었고, 그래서 `match_info.step1_completed_by`, `report.reviewed_by`가 항상 NULL이었다. 이번엔 관리자도 `users`에 `role='admin'`으로 실제 row를 두면, **누가 승인/처리했는지 제대로 기록**할 수 있다. 이렇게 가는 걸 추천하지만 로그인 설계 담당과 합의 필요.
 
@@ -33,6 +34,7 @@ erDiagram
     users {
         bigint user_id PK
         varchar email UK
+        varchar password_hash
         varchar role
         varchar status
         datetime agreed_privacy_at
@@ -113,6 +115,7 @@ erDiagram
 | --- | --- | --- | --- |
 | user_id | BIGINT | PK, AUTO_INCREMENT | |
 | email | VARCHAR(255) | NOT NULL, UNIQUE | |
+| password_hash | VARCHAR(255) | NULL | BCrypt 해시. 기존 OTP 전용 계정 호환을 위해 DB는 NULL 허용, 신규 가입은 애플리케이션에서 필수 저장 |
 | role | VARCHAR(20) | NOT NULL, DEFAULT 'participant' | participant / admin |
 | status | VARCHAR(20) | NOT NULL, DEFAULT 'active' | active / suspended |
 | agreed_privacy_at | DATETIME | NULL | |
@@ -302,7 +305,13 @@ CREATE TABLE push_subscription (
 );
 ```
 
-## 5. 이번 문서 범위 밖
+## 5. 이후 마이그레이션
+
+`V2__add_password_hash_to_users.sql`은 기존 테스트 계정과의 호환성을 위해
+nullable인 `users.password_hash VARCHAR(255)`를 추가한다. 신규 회원가입은
+애플리케이션 레벨에서 8자 이상 비밀번호와 BCrypt 해시 저장을 강제한다.
+
+## 6. 이번 문서 범위 밖
 
 - 관리자 계정을 `users`에 실제로 둘지 여부 — 로그인 설계 담당과 별도 합의 필요
 - 인덱스 튜닝(부하테스트 이후 필요시 추가)

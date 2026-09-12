@@ -27,6 +27,9 @@ public class User {
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
+    @Column(name = "password_hash", length = 255)
+    private String passwordHash;
+
     @Convert(converter = UserRoleConverter.class)
     @Column(nullable = false, length = 20)
     private UserRole role;
@@ -76,5 +79,9 @@ public class User {
 
     public void suspend() {
         this.status = UserStatus.SUSPENDED;
+    }
+
+    public void setPassword(String passwordHash) {
+        this.passwordHash = passwordHash;
     }
 }

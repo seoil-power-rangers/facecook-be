@@ -1,6 +1,7 @@
 package com.facecook.auth.service;
 
 import com.facecook.auth.dto.AuthVerificationResponse;
+import com.facecook.auth.dto.PasswordLoginRequest;
 import com.facecook.auth.dto.RequestCodeRequest;
 import com.facecook.auth.dto.RequestCodeResponse;
 import com.facecook.auth.dto.VerificationPurpose;
@@ -15,6 +16,7 @@ import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -28,9 +30,12 @@ import java.util.Set;
 public class AuthService {
 
     private static final Set<String> REQUIRED_TERMS = Set.of("service", "privacy");
+    private static final String DUMMY_PASSWORD_HASH =
+            "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
     private final UserRepository userRepository;
     private final VerificationCodeService verificationCodeService;
+    private final PasswordEncoder passwordEncoder;
 
     public RequestCodeResponse requestCode(RequestCodeRequest request) {
         String email = EmailAddress.normalize(request.email());
@@ -54,7 +59,9 @@ public class AuthService {
 
         User user;
         try {
-            user = userRepository.saveAndFlush(User.createParticipant(email, LocalDateTime.now()));
+            user = User.createParticipant(email, LocalDateTime.now());
+            user.setPassword(passwordEncoder.encode(request.password()));
+            user = userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
             throw new ApiException(ErrorCode.ALREADY_REGISTERED, exception);
         }
@@ -71,6 +78,29 @@ public class AuthService {
 
         verificationCodeService.verify(email, request.code(), VerificationPurpose.LOGIN);
         consumeCodeAfterCommit(email, VerificationPurpose.LOGIN);
+        return AuthVerificationResponse.from(user);
+    }
+
+    @Transactional(readOnly = true)
+    public AuthVerificationResponse login(PasswordLoginRequest request) {
+        String email = EmailAddress.normalize(request.email());
+        User user = userRepository.findByEmail(email)
+                .filter(candidate -> candidate.getRole() == UserRole.PARTICIPANT)
+                .orElse(null);
+        if (user == null) {
+            passwordEncoder.matches(request.password(), DUMMY_PASSWORD_HASH);
+            throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
+        }
+        validateActive(user);
+
+        String passwordHash = user.getPasswordHash();
+        if (passwordHash == null) {
+            passwordEncoder.matches(request.password(), DUMMY_PASSWORD_HASH);
+            throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
+        }
+        if (!passwordEncoder.matches(request.password(), passwordHash)) {
+            throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
+        }
         return AuthVerificationResponse.from(user);
     }
 

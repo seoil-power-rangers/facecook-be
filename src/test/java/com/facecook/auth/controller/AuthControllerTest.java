@@ -136,12 +136,55 @@ class AuthControllerTest {
                                 {
                                   "email": "user@example.com",
                                   "code": "123456",
+                                  "password": "password123",
                                   "agreedTerms": ["service", "privacy"]
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(1))
                 .andExpect(jsonPath("$.role").value("participant"))
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.passwordHash").doesNotExist())
+                .andExpect(cookie().exists(COOKIE_NAME))
+                .andExpect(cookie().httpOnly(COOKIE_NAME, true));
+    }
+
+    @Test
+    void returnsValidationErrorForShortSignupPassword() throws Exception {
+        mockMvc.perform(post("/api/auth/verify-signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "user@example.com",
+                                  "code": "123456",
+                                  "password": "short",
+                                  "agreedTerms": ["service", "privacy"]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION"));
+    }
+
+    @Test
+    void passwordLoginIssuesSessionCookie() throws Exception {
+        when(authService.login(any())).thenReturn(
+                new AuthVerificationResponse(1L, "user@example.com", "participant")
+        );
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "user@example.com",
+                                  "password": "password123"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(1))
+                .andExpect(jsonPath("$.email").value("user@example.com"))
+                .andExpect(jsonPath("$.role").value("participant"))
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.passwordHash").doesNotExist())
                 .andExpect(cookie().exists(COOKIE_NAME))
                 .andExpect(cookie().httpOnly(COOKIE_NAME, true));
     }
