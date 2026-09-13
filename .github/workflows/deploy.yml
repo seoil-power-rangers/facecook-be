@@ -29,9 +29,19 @@ jobs:
         id: vars
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      # t4g EC2 인스턴스가 Arm64라 이미지도 Arm64로 빌드해야 한다 (QEMU로 크로스 빌드).
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      # Gradle 빌드는 러너에서 네이티브(x86)로 직접 돌린다.
+      # Dockerfile 안에서 빌드하면 arm64 크로스빌드용 QEMU 에뮬레이션 때문에
+      # 같은 빌드가 7분 넘게 걸린다(실측) - 자바 바이트코드는 아키텍처 무관이라
+      # 컴파일은 빠른 x86에서 하고, 도커는 완성된 jar만 담아 arm64로 패키징한다.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build jar
+        run: ./gradlew clean bootJar -x test --no-daemon
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
