@@ -7,6 +7,7 @@ import com.facecook.cook.service.CookService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,5 +32,14 @@ public class MatchController {
             @PathVariable Long matchId
     ) {
         return ResponseEntity.ok(cookService.getMatch(currentUser.userId(), matchId));
+    }
+
+    @PatchMapping("/{matchId}/read")
+    public ResponseEntity<Void> markRead(
+            @CurrentUser AuthenticatedUser currentUser,
+            @PathVariable Long matchId
+    ) {
+        cookService.markRead(currentUser.userId(), matchId);
+        return ResponseEntity.noContent().build();
     }
 }

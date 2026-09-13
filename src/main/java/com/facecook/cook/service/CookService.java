@@ -1,5 +1,6 @@
 package com.facecook.cook.service;
 
+import com.facecook.chat.repository.MessageRepository;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.cook.dto.CookItemResponse;
@@ -57,6 +58,7 @@ public class CookService {
     private final MatchInfoRepository matchInfoRepository;
     private final CookUserRepository cookUserRepository;
     private final ProfileRepository profileRepository;
+    private final MessageRepository messageRepository;
     private final ParticipantPushNotificationService pushNotificationService;
     private final Clock clock;
 
@@ -226,7 +228,24 @@ public class CookService {
         RecentMessageResponse recentMessage = matchInfoRepository.findRecentMessage(matchInfo.getId())
                 .map(RecentMessageResponse::from)
                 .orElse(null);
-        return MatchResponse.from(matchInfo, partner, recentMessage);
+        return MatchResponse.from(matchInfo, partner, recentMessage, unreadCount(matchInfo, userId));
+    }
+
+    private long unreadCount(MatchInfo matchInfo, Long userId) {
+        LocalDateTime lastReadAt = matchInfo.lastReadAt(userId);
+        return lastReadAt == null
+                ? messageRepository.countByMatchIdAndSenderIdNot(matchInfo.getId(), userId)
+                : messageRepository.countByMatchIdAndSenderIdNotAndSentAtAfter(matchInfo.getId(), userId, lastReadAt);
+    }
+
+    @Transactional
+    public void markRead(Long userId, Long matchId) {
+        MatchInfo matchInfo = matchInfoRepository.findById(matchId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "매칭을 찾을 수 없습니다."));
+        if (!matchInfo.includes(userId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN);
+        }
+        matchInfo.markRead(userId, now());
     }
 
     private Map<Long, ProfileResponse> profileResponses(Collection<Long> userIds) {

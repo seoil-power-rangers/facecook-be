@@ -32,6 +32,12 @@ public class MatchInfo {
     @Column(name = "matched_at", nullable = false)
     private LocalDateTime matchedAt;
 
+    @Column(name = "user_a_last_read_at")
+    private LocalDateTime userALastReadAt;
+
+    @Column(name = "user_b_last_read_at")
+    private LocalDateTime userBLastReadAt;
+
     private MatchInfo(Long firstUserId, Long secondUserId, LocalDateTime matchedAt) {
         this.userAId = Math.min(firstUserId, secondUserId);
         this.userBId = Math.max(firstUserId, secondUserId);
@@ -48,5 +54,17 @@ public class MatchInfo {
 
     public Long otherUserId(Long userId) {
         return userAId.equals(userId) ? userBId : userAId;
+    }
+
+    public LocalDateTime lastReadAt(Long userId) {
+        return userAId.equals(userId) ? userALastReadAt : userBLastReadAt;
+    }
+
+    public void markRead(Long userId, LocalDateTime at) {
+        if (userAId.equals(userId)) {
+            userALastReadAt = at;
+        } else if (userBId.equals(userId)) {
+            userBLastReadAt = at;
+        }
     }
 }
