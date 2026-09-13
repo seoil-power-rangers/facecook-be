@@ -41,6 +41,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -145,7 +146,8 @@ class CookControllerTest {
                 20L,
                 LocalDateTime.of(2026, 9, 30, 12, 0),
                 null,
-                null
+                null,
+                0
         );
         when(cookService.getMatches(1L)).thenReturn(List.of(response));
         when(cookService.getMatch(1L, 20L)).thenReturn(response);
@@ -157,6 +159,16 @@ class CookControllerTest {
         mockMvc.perform(get("/api/matches/20").cookie(validCookie(1L)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.matchId").value(20));
+    }
+
+    @Test
+    void marksMatchReadForCurrentUser() throws Exception {
+        givenAuthenticatedUser(1L);
+
+        mockMvc.perform(patch("/api/matches/20/read").cookie(validCookie(1L)))
+                .andExpect(status().isNoContent());
+
+        verify(cookService).markRead(1L, 20L);
     }
 
     @Test

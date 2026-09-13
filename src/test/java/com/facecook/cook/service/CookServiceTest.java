@@ -1,6 +1,7 @@
 package com.facecook.cook.service;
 
 import com.facecook.auth.entity.User;
+import com.facecook.chat.repository.MessageRepository;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.cook.dto.SendCookRequest;
@@ -57,6 +58,9 @@ class CookServiceTest {
     private ProfileRepository profileRepository;
 
     @Mock
+    private MessageRepository messageRepository;
+
+    @Mock
     private ParticipantPushNotificationService pushNotificationService;
 
     private CookService cookService;
@@ -68,6 +72,7 @@ class CookServiceTest {
                 matchInfoRepository,
                 cookUserRepository,
                 profileRepository,
+                messageRepository,
                 pushNotificationService,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
@@ -170,7 +175,7 @@ class CookServiceTest {
         Clock secondDay = Clock.fixed(Instant.parse("2026-10-01T03:00:00Z"), ZoneOffset.UTC);
         CookService secondDayService = new CookService(
                 cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
-                pushNotificationService, secondDay
+                messageRepository, pushNotificationService, secondDay
         );
         givenLockedUsers(1L, 2L);
         when(cookRepository.countBySentAtGreaterThanEqualAndSentAtLessThan(
@@ -186,7 +191,7 @@ class CookServiceTest {
         Clock beforeEvent = Clock.fixed(Instant.parse("2026-01-01T03:00:00Z"), ZoneOffset.UTC);
         CookService devService = new CookService(
                 cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
-                pushNotificationService, beforeEvent
+                messageRepository, pushNotificationService, beforeEvent
         );
         givenLockedUsers(1L, 2L);
         when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -314,6 +319,69 @@ class CookServiceTest {
         assertErrorCode(() -> cookService.getMatch(3L, 20L), ErrorCode.FORBIDDEN);
 
         verify(profileRepository, never()).findById(any());
+    }
+
+    @Test
+    void unreadCountCountsAllPartnerMessagesWhenNeverRead() {
+        MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
+        when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
+                .thenReturn(List.of(match));
+        when(profileRepository.findById(2L)).thenReturn(Optional.of(profile(2L, "partner")));
+        when(messageRepository.countByMatchIdAndSenderIdNot(20L, 1L)).thenReturn(3L);
+
+        var responses = cookService.getMatches(1L);
+
+        assertThat(responses).singleElement().satisfies(response ->
+                assertThat(response.unreadCount()).isEqualTo(3L)
+        );
+        verify(messageRepository, never()).countByMatchIdAndSenderIdNotAndSentAtAfter(any(), any(), any());
+    }
+
+    @Test
+    void unreadCountCountsOnlyMessagesSinceLastRead() {
+        MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
+        LocalDateTime lastReadAt = EVENT_NOW.minusMinutes(5);
+        match.markRead(1L, lastReadAt);
+        when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
+                .thenReturn(List.of(match));
+        when(profileRepository.findById(2L)).thenReturn(Optional.of(profile(2L, "partner")));
+        when(messageRepository.countByMatchIdAndSenderIdNotAndSentAtAfter(20L, 1L, lastReadAt)).thenReturn(1L);
+
+        var responses = cookService.getMatches(1L);
+
+        assertThat(responses).singleElement().satisfies(response ->
+                assertThat(response.unreadCount()).isEqualTo(1L)
+        );
+        verify(messageRepository, never()).countByMatchIdAndSenderIdNot(any(), any());
+    }
+
+    @Test
+    void markReadRejectsMissingMatch() {
+        when(matchInfoRepository.findById(20L)).thenReturn(Optional.empty());
+
+        assertErrorCode(() -> cookService.markRead(1L, 20L), ErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    void markReadRejectsNonParticipant() {
+        MatchInfo match = match(20L, 1L, 2L, EVENT_NOW);
+        when(matchInfoRepository.findById(20L)).thenReturn(Optional.of(match));
+
+        assertErrorCode(() -> cookService.markRead(3L, 20L), ErrorCode.FORBIDDEN);
+
+        assertThat(match.lastReadAt(1L)).isNull();
+        assertThat(match.lastReadAt(2L)).isNull();
+    }
+
+    @Test
+    void markReadUpdatesLastReadTimeForParticipant() {
+        MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
+        when(matchInfoRepository.findById(20L)).thenReturn(Optional.of(match));
+
+        cookService.markRead(1L, 20L);
+
+        assertThat(match.lastReadAt(1L)).isEqualTo(EVENT_NOW);
+        assertThat(match.lastReadAt(2L)).isNull();
     }
 
     @Test
