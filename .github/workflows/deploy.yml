@@ -92,8 +92,11 @@ jobs:
           for ID in ${{ steps.instances.outputs.ids }}; do
             echo "=== Deploying to $ID ==="
 
-            COMMANDS_JSON=$(jq -n --arg ecr "$ECR_REPOSITORY" --arg region "$AWS_REGION" '{
+            REFRESH_ENV='ENV_JSON=$(aws secretsmanager get-secret-value --region '"$AWS_REGION"' --secret-id facecook/app-env --query SecretString --output text); echo "$ENV_JSON" | python3 -c "import json,sys; [print(f'"'"'{k}={v}'"'"') for k,v in json.load(sys.stdin).items()]" > /opt/facecook/app.env'
+
+            COMMANDS_JSON=$(jq -n --arg ecr "$ECR_REPOSITORY" --arg region "$AWS_REGION" --arg refresh_env "$REFRESH_ENV" '{
               commands: [
+                $refresh_env,
                 "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($ecr)",
                 "docker pull \($ecr):latest",
                 "docker rm -f facecook-app || true",
