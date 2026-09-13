@@ -51,6 +51,7 @@ app:
     max-age-seconds: ${SESSION_MAX_AGE_SECONDS:604800}
     secure: ${SESSION_COOKIE_SECURE:false}
     same-site: ${SESSION_COOKIE_SAME_SITE:Lax}
+    domain: ${SESSION_COOKIE_DOMAIN:}
   push:
     vapid:
       public-key: ${VAPID_PUBLIC_KEY:}
