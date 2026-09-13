@@ -73,7 +73,7 @@ class ChatRestControllerTest {
 
         @Bean
         SessionProperties sessionProperties() {
-            return new SessionProperties("test-secret", COOKIE_NAME, 604800, false, "Lax");
+            return new SessionProperties("test-secret", COOKIE_NAME, 604800, false, "Lax", null);
         }
     }
 

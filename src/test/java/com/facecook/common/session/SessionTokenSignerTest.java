@@ -14,7 +14,7 @@ class SessionTokenSignerTest {
     private static final Instant NOW = Instant.parse("2026-01-01T00:00:00Z");
 
     private final SessionProperties properties =
-            new SessionProperties("test-secret", "FACECOOK_SESSION", 604800, false, "Lax");
+            new SessionProperties("test-secret", "FACECOOK_SESSION", 604800, false, "Lax", null);
     private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
     private final SessionTokenSigner signer = new SessionTokenSigner(properties, clock);
 
@@ -40,7 +40,7 @@ class SessionTokenSignerTest {
     @Test
     void rejectsTokenSignedWithDifferentSecret() {
         SessionTokenSigner otherSigner = new SessionTokenSigner(
-                new SessionProperties("different-secret", "FACECOOK_SESSION", 604800, false, "Lax"),
+                new SessionProperties("different-secret", "FACECOOK_SESSION", 604800, false, "Lax", null),
                 clock
         );
         String token = otherSigner.issue(1L, 3600);

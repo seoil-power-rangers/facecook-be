@@ -23,13 +23,16 @@ public class SessionCookieService {
     }
 
     private ResponseCookie cookie(String value, long maxAgeSeconds) {
-        return ResponseCookie.from(properties.cookieName(), value)
+        ResponseCookie.ResponseCookieBuilder builder = ResponseCookie.from(properties.cookieName(), value)
                 .httpOnly(true)
                 .secure(properties.secure())
                 .sameSite(properties.sameSite())
                 .path("/")
-                .maxAge(maxAgeSeconds)
-                .build();
+                .maxAge(maxAgeSeconds);
+        if (properties.domain() != null) {
+            builder.domain(properties.domain());
+        }
+        return builder.build();
     }
 
     public String cookieName() {
