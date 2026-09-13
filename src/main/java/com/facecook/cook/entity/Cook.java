@@ -68,6 +68,10 @@ public class Cook {
         this.status = CookStatus.MATCHED;
     }
 
+    public void cancel() {
+        this.status = CookStatus.CANCELLED;
+    }
+
     public Long otherUserId(Long userId) {
         return senderId.equals(userId) ? receiverId : senderId;
     }

@@ -23,6 +23,7 @@ public enum ErrorCode {
     FORBIDDEN(HttpStatus.FORBIDDEN, "접근 권한이 없습니다."),
     SELF(HttpStatus.BAD_REQUEST, "자기 자신에게 콕을 보낼 수 없습니다."),
     ALREADY_MATCHED(HttpStatus.CONFLICT, "이미 매칭된 상대입니다."),
+    ALREADY_EXPIRED(HttpStatus.CONFLICT, "이미 만료된 콕입니다."),
     DUPLICATE(HttpStatus.CONFLICT, "이미 콕을 보낸 상대입니다."),
     DAILY_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "오늘 보낼 수 있는 콕을 모두 사용했습니다."),
     EVENT_LIMIT(HttpStatus.TOO_MANY_REQUESTS, "행사 전체 콕 제한에 도달했습니다."),

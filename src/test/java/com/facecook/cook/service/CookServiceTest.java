@@ -316,6 +316,72 @@ class CookServiceTest {
         verify(profileRepository, never()).findById(any());
     }
 
+    @Test
+    void cancelRejectsMissingCook() {
+        when(cookRepository.findById(10L)).thenReturn(Optional.empty());
+
+        assertErrorCode(() -> cookService.cancel(1L, 10L), ErrorCode.NOT_FOUND);
+    }
+
+    @Test
+    void cancelRejectsNonSender() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+
+        assertErrorCode(() -> cookService.cancel(2L, 10L), ErrorCode.FORBIDDEN);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.PENDING);
+    }
+
+    @Test
+    void cancelRejectsAlreadyMatchedCook() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        cook.match(20L);
+        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+
+        assertErrorCode(() -> cookService.cancel(1L, 10L), ErrorCode.ALREADY_MATCHED);
+    }
+
+    @Test
+    void cancelRejectsAlreadyExpiredCook() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusHours(2));
+        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+
+        assertErrorCode(() -> cookService.cancel(1L, 10L), ErrorCode.ALREADY_EXPIRED);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.EXPIRED);
+    }
+
+    @Test
+    void cancelMarksPendingCookAsCancelled() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+
+        cookService.cancel(1L, 10L);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.CANCELLED);
+    }
+
+    @Test
+    void cancelledCooksAreExcludedFromBothSentAndReceivedLists() {
+        Cook cancelledSent = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(30));
+        cancelledSent.cancel();
+        Cook activeReceived = cook(11L, 3L, 1L, EVENT_NOW.minusMinutes(10));
+        when(cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(1L, 1L))
+                .thenReturn(List.of(activeReceived, cancelledSent));
+        when(profileRepository.findAllById(anyCollection())).thenReturn(List.of(profile(3L, "three")));
+        when(cookRepository.countBySenderIdAndSentAtGreaterThanEqualAndSentAtLessThan(eq(1L), any(), any()))
+                .thenReturn(0L);
+        when(cookRepository.countBySenderId(1L)).thenReturn(1L);
+
+        var response = cookService.getCooks(1L);
+
+        assertThat(response.sent()).isEmpty();
+        assertThat(response.received()).singleElement().satisfies(item ->
+                assertThat(item.userId()).isEqualTo(3L)
+        );
+    }
+
     private void givenLockedUsers(Long firstId, Long secondId) {
         List<Long> ids = List.of(Math.min(firstId, secondId), Math.max(firstId, secondId));
         when(cookUserRepository.findAllByIdForUpdate(ids)).thenReturn(List.of(user(firstId), user(secondId)));

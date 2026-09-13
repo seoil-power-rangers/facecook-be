@@ -5,7 +5,8 @@ import java.util.Arrays;
 public enum CookStatus {
     PENDING("pending"),
     MATCHED("matched"),
-    EXPIRED("expired");
+    EXPIRED("expired"),
+    CANCELLED("cancelled");
 
     private final String value;
 

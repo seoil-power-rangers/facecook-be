@@ -10,6 +10,7 @@ import com.facecook.cook.dto.RecentMessageResponse;
 import com.facecook.cook.dto.SendCookRequest;
 import com.facecook.cook.dto.SendCookResponse;
 import com.facecook.cook.entity.Cook;
+import com.facecook.cook.entity.CookStatus;
 import com.facecook.cook.entity.MatchInfo;
 import com.facecook.cook.repository.CookRepository;
 import com.facecook.cook.repository.CookUserRepository;
@@ -106,9 +107,30 @@ public class CookService {
     }
 
     @Transactional
+    public void cancel(Long userId, Long cookId) {
+        Cook cook = cookRepository.findById(cookId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+        if (!cook.getSenderId().equals(userId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN);
+        }
+
+        cook.expireIfOverdue(now());
+        if (cook.getStatus() == CookStatus.MATCHED) {
+            throw new ApiException(ErrorCode.ALREADY_MATCHED);
+        }
+        if (cook.getStatus() == CookStatus.EXPIRED) {
+            throw new ApiException(ErrorCode.ALREADY_EXPIRED);
+        }
+        cook.cancel();
+    }
+
+    @Transactional
     public CookListResponse getCooks(Long userId) {
         LocalDateTime now = now();
-        List<Cook> cooks = cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(userId, userId);
+        List<Cook> cooks = cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(userId, userId)
+                .stream()
+                .filter(cook -> cook.getStatus() != CookStatus.CANCELLED)
+                .toList();
         cooks.forEach(cook -> cook.expireIfOverdue(now));
 
         Map<Long, ProfileResponse> profiles = profileResponses(

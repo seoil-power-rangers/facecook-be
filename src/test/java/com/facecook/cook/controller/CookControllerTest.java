@@ -2,6 +2,8 @@ package com.facecook.cook.controller;
 
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.common.exception.ApiException;
+import com.facecook.common.exception.ErrorCode;
 import com.facecook.common.exception.GlobalExceptionHandler;
 import com.facecook.common.session.CurrentUserArgumentResolver;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
@@ -34,7 +36,10 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -152,6 +157,26 @@ class CookControllerTest {
         mockMvc.perform(get("/api/matches/20").cookie(validCookie(1L)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.matchId").value(20));
+    }
+
+    @Test
+    void cancelsCookForCurrentUser() throws Exception {
+        givenAuthenticatedUser(1L);
+
+        mockMvc.perform(delete("/api/cooks/10").cookie(validCookie(1L)))
+                .andExpect(status().isNoContent());
+
+        verify(cookService).cancel(1L, 10L);
+    }
+
+    @Test
+    void rejectsCancelOfNonSenderCook() throws Exception {
+        givenAuthenticatedUser(1L);
+        doThrow(new ApiException(ErrorCode.FORBIDDEN)).when(cookService).cancel(1L, 10L);
+
+        mockMvc.perform(delete("/api/cooks/10").cookie(validCookie(1L)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test
