@@ -97,10 +97,11 @@ class ProfilePhotoUploadServiceTest {
         org.mockito.Mockito.verify(s3Presigner).presignPutObject(captor.capture());
         PutObjectRequest putObjectRequest = captor.getValue().putObjectRequest();
         assertThat(putObjectRequest.contentType()).isEqualTo("image/webp");
-        // 행사 종료와 함께 곧 지워지는 짧은 수명·자주 조회되는 데이터라
-        // IA가 아니라 Standard가 더 싸다(별도 논의 반영).
-        assertThat(putObjectRequest.storageClassAsString())
-                .isEqualTo(software.amazon.awssdk.services.s3.model.StorageClass.STANDARD.toString());
+        // storageClass는 일부러 지정하지 않는다(S3 기본값이 Standard라
+        // 결과는 같은데, 지정하면 presigned URL의 서명 대상 헤더에
+        // x-amz-storage-class가 끼어들어 실제 업로드가 403으로 깨진다 —
+        // 겪었던 장애라 회귀 방지로 남겨둔다).
+        assertThat(putObjectRequest.storageClass()).isNull();
         assertThat(putObjectRequest.bucket()).isEqualTo("facecook-photos");
     }
 }
