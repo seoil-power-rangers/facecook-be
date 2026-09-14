@@ -61,6 +61,13 @@ app:
       # STATUS is the default until last_active_at is updated by user activity.
       # Set LAST_ACTIVE_TODAY to count activity for the current Asia/Seoul date.
       active-user-criterion: ${ADMIN_STATS_ACTIVE_USER_CRITERION:STATUS}
+  s3:
+    bucket: ${S3_BUCKET:}
+    region: ${AWS_REGION:ap-northeast-2}
+    # 비워두면 버킷·리전으로 가상 호스팅 방식 URL을 만든다. CloudFront 등을
+    # 앞단에 두게 되면 그 도메인으로 덮어쓴다.
+    public-base-url: ${S3_PUBLIC_BASE_URL:}
+    presign-ttl-seconds: ${S3_PRESIGN_TTL_SECONDS:300}
 
 server:
   port: 8080

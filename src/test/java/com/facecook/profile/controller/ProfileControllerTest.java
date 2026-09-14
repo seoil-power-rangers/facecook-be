@@ -9,7 +9,9 @@ import com.facecook.common.session.SessionCookieService;
 import com.facecook.common.session.SessionProperties;
 import com.facecook.common.session.SessionTokenSigner;
 import com.facecook.config.WebConfig;
+import com.facecook.profile.dto.PhotoUploadUrlResponse;
 import com.facecook.profile.dto.ProfileResponse;
+import com.facecook.profile.service.ProfilePhotoUploadService;
 import com.facecook.profile.service.ProfileService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
@@ -62,6 +64,9 @@ class ProfileControllerTest {
 
     @MockitoBean
     private ProfileService profileService;
+
+    @MockitoBean
+    private ProfilePhotoUploadService profilePhotoUploadService;
 
     @MockitoBean
     private UserRepository userRepository;
@@ -181,6 +186,29 @@ class ProfileControllerTest {
         mockMvc.perform(get("/api/profiles/8").cookie(validCookie()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(8L));
+    }
+
+    @Test
+    void issuesPhotoUploadUrlForCurrentUser() throws Exception {
+        authenticateCurrentUser();
+        when(profilePhotoUploadService.issueUploadUrl("image/jpeg"))
+                .thenReturn(new PhotoUploadUrlResponse(
+                        "https://facecook-photos.s3.ap-northeast-2.amazonaws.com/profile-photos/abc.jpg?X-Amz-Signature=...",
+                        "https://facecook-photos.s3.ap-northeast-2.amazonaws.com/profile-photos/abc.jpg"
+                ));
+
+        mockMvc.perform(post("/api/profile/photo/upload-url")
+                        .cookie(validCookie())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "contentType": "image/jpeg"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.photoUrl").value(
+                        "https://facecook-photos.s3.ap-northeast-2.amazonaws.com/profile-photos/abc.jpg"
+                ));
     }
 
     @Test
