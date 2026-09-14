@@ -97,6 +97,10 @@ class ProfilePhotoUploadServiceTest {
         org.mockito.Mockito.verify(s3Presigner).presignPutObject(captor.capture());
         PutObjectRequest putObjectRequest = captor.getValue().putObjectRequest();
         assertThat(putObjectRequest.contentType()).isEqualTo("image/webp");
+        // 행사 종료와 함께 곧 지워지는 짧은 수명·자주 조회되는 데이터라
+        // IA가 아니라 Standard가 더 싸다(별도 논의 반영).
+        assertThat(putObjectRequest.storageClassAsString())
+                .isEqualTo(software.amazon.awssdk.services.s3.model.StorageClass.STANDARD.toString());
         assertThat(putObjectRequest.bucket()).isEqualTo("facecook-photos");
     }
 }
