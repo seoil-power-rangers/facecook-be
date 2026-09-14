@@ -7,6 +7,7 @@ import com.facecook.profile.dto.PhotoUploadUrlResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.StorageClass;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
@@ -42,6 +43,15 @@ public class ProfilePhotoUploadService {
                 .bucket(s3Properties.bucket())
                 .key(key)
                 .contentType(contentType)
+                /*
+                 * Standard를 명시적으로 고정한다 — IA(저빈도 접근)로 바꾸면
+                 * 더 쌀 것 같지만, 이 사진들은 행사 종료(EVENT.purgeAt)와
+                 * 함께 곧 지워지는 초단기 데이터라 IA의 최소 30일 저장 요금을
+                 * 다 못 채우고 삭제된다. 게다가 탐색 화면에서 서로 자주 열어
+                 * 보는 데이터라 IA의 조회 요금·비싼 GET 단가까지 겹쳐서
+                 * 오히려 Standard보다 비싸진다.
+                 */
+                .storageClass(StorageClass.STANDARD)
                 .build();
 
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
