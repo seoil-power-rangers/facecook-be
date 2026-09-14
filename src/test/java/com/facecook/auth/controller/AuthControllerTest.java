@@ -4,6 +4,7 @@ import com.facecook.auth.dto.AuthVerificationResponse;
 import com.facecook.auth.dto.RequestCodeResponse;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.auth.service.AuthService;
 import com.facecook.common.exception.GlobalExceptionHandler;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
@@ -65,6 +66,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {

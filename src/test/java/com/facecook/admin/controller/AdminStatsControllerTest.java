@@ -5,6 +5,7 @@ import com.facecook.admin.service.AdminStatsService;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.entity.UserRole;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.GlobalExceptionHandler;
 import com.facecook.common.session.CurrentUserArgumentResolver;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
@@ -60,6 +61,9 @@ class AdminStatsControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {

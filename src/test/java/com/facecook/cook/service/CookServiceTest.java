@@ -13,8 +13,10 @@ import com.facecook.cook.repository.CookUserRepository;
 import com.facecook.cook.repository.MatchInfoRepository;
 import com.facecook.cook.repository.RecentMessageProjection;
 import com.facecook.profile.dto.CreateProfileRequest;
+import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
+import com.facecook.profile.service.ProfileActivityLookup;
 import com.facecook.push.service.ParticipantPushNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +60,9 @@ class CookServiceTest {
     private ProfileRepository profileRepository;
 
     @Mock
+    private ProfileActivityLookup activityLookup;
+
+    @Mock
     private MessageRepository messageRepository;
 
     @Mock
@@ -67,11 +72,24 @@ class CookServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 활동 정보(lastActiveAt/isActive)는 이 테스트의 관심사가 아니라, 실제
+        // ProfileResponse.from을 그대로 위임해 null/false로 채운다.
+        org.mockito.Mockito.lenient().when(activityLookup.toResponse(any(Profile.class)))
+                .thenAnswer(invocation -> ProfileResponse.from(invocation.getArgument(0), null, false));
+        org.mockito.Mockito.lenient().when(activityLookup.toResponses(any()))
+                .thenAnswer(invocation -> {
+                    List<Profile> profiles = invocation.getArgument(0);
+                    return profiles.stream()
+                            .map(profile -> ProfileResponse.from(profile, null, false))
+                            .toList();
+                });
+
         cookService = new CookService(
                 cookRepository,
                 matchInfoRepository,
                 cookUserRepository,
                 profileRepository,
+                activityLookup,
                 messageRepository,
                 pushNotificationService,
                 Clock.fixed(NOW, ZoneOffset.UTC)
@@ -175,7 +193,7 @@ class CookServiceTest {
         Clock secondDay = Clock.fixed(Instant.parse("2026-10-01T03:00:00Z"), ZoneOffset.UTC);
         CookService secondDayService = new CookService(
                 cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
-                messageRepository, pushNotificationService, secondDay
+                activityLookup, messageRepository, pushNotificationService, secondDay
         );
         givenLockedUsers(1L, 2L);
         when(cookRepository.countBySentAtGreaterThanEqualAndSentAtLessThan(
@@ -191,7 +209,7 @@ class CookServiceTest {
         Clock beforeEvent = Clock.fixed(Instant.parse("2026-01-01T03:00:00Z"), ZoneOffset.UTC);
         CookService devService = new CookService(
                 cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
-                messageRepository, pushNotificationService, beforeEvent
+                activityLookup, messageRepository, pushNotificationService, beforeEvent
         );
         givenLockedUsers(1L, 2L);
         when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));

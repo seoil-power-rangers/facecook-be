@@ -2,6 +2,7 @@ package com.facecook.cook.controller;
 
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.common.exception.GlobalExceptionHandler;
@@ -71,6 +72,9 @@ class CookControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {

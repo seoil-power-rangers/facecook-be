@@ -3,6 +3,7 @@ package com.facecook.report.controller;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.entity.UserRole;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.GlobalExceptionHandler;
 import com.facecook.common.session.CurrentUserArgumentResolver;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
@@ -65,6 +66,9 @@ class ReportControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {

@@ -3,7 +3,9 @@ package com.facecook.profile.service;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.profile.dto.CreateProfileRequest;
+import com.facecook.profile.dto.ProfileFiltersResponse;
 import com.facecook.profile.dto.ProfileResponse;
+import com.facecook.profile.dto.ProfileStatsResponse;
 import com.facecook.profile.dto.UpdateProfileRequest;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
@@ -12,7 +14,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeSet;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +24,7 @@ public class ProfileService {
 
     private final ProfileRepository profileRepository;
     private final ProfilePhotoUrlPolicy photoUrlPolicy;
+    private final ProfileActivityLookup activityLookup;
 
     @Transactional
     public ProfileResponse create(Long userId, CreateProfileRequest request) {
@@ -27,10 +32,11 @@ public class ProfileService {
             throw new ApiException(ErrorCode.PROFILE_ALREADY_EXISTS);
         }
         requireOwnPhotoUrlIfPresent(request.photo());
+        requireValidDepartmentIfPresent(request.department());
 
         try {
             Profile profile = profileRepository.saveAndFlush(Profile.create(userId, request));
-            return ProfileResponse.from(profile);
+            return activityLookup.toResponse(profile);
         } catch (DataIntegrityViolationException exception) {
             throw new ApiException(ErrorCode.PROFILE_ALREADY_EXISTS, exception);
         }
@@ -38,7 +44,7 @@ public class ProfileService {
 
     @Transactional(readOnly = true)
     public ProfileResponse get(Long userId) {
-        return ProfileResponse.from(findProfile(userId));
+        return activityLookup.toResponse(findProfile(userId));
     }
 
     @Transactional
@@ -47,17 +53,59 @@ public class ProfileService {
             throw new ApiException(ErrorCode.VALIDATION, "수정할 프로필 항목을 입력해주세요.");
         }
         requireOwnPhotoUrlIfPresent(request.photo());
+        requireValidDepartmentIfPresent(request.department());
 
         Profile profile = findProfile(userId);
         profile.update(request);
-        return ProfileResponse.from(profile);
+        return activityLookup.toResponse(profile);
     }
 
     @Transactional(readOnly = true)
     public List<ProfileResponse> getParticipantsExcept(Long userId) {
-        return profileRepository.findAllByUserIdNotOrderByUserIdAsc(userId).stream()
-                .map(ProfileResponse::from)
-                .toList();
+        return activityLookup.toResponses(profileRepository.findAllByUserIdNotOrderByUserIdAsc(userId));
+    }
+
+    @Transactional(readOnly = true)
+    public ProfileStatsResponse getStats() {
+        long total = profileRepository.count();
+        long activeNow = profileRepository.countActiveSince(activityLookup.activeSince());
+        return new ProfileStatsResponse(total, activeNow);
+    }
+
+    /**
+     * 페이징이 아직 없어서(2순위 별도 작업) 지금은 전체를 기준으로 계산한다.
+     * 참가자가 300명 수준이라 매번 전체를 훑어도 부담이 크지 않다.
+     */
+    @Transactional(readOnly = true)
+    public ProfileFiltersResponse getFilters(boolean activeOnly) {
+        List<Profile> profiles = activeOnly
+                ? profileRepository.findAllActiveSince(activityLookup.activeSince())
+                : profileRepository.findAll();
+
+        TreeSet<String> departments = new TreeSet<>();
+        TreeSet<String> mbtis = new TreeSet<>();
+        TreeSet<String> hobbies = new TreeSet<>();
+
+        for (Profile profile : profiles) {
+            if (profile.getDepartment() != null && !profile.getDepartment().isBlank()) {
+                departments.add(profile.getDepartment());
+            }
+            if (profile.getMbti() != null && !profile.getMbti().isBlank()) {
+                mbtis.add(profile.getMbti());
+            }
+            for (String hobby : profile.getHobby().split(",")) {
+                String trimmed = hobby.trim();
+                if (!trimmed.isEmpty()) {
+                    hobbies.add(trimmed);
+                }
+            }
+        }
+
+        return new ProfileFiltersResponse(
+                new ArrayList<>(departments),
+                new ArrayList<>(mbtis),
+                new ArrayList<>(hobbies)
+        );
     }
 
     private Profile findProfile(Long userId) {
@@ -69,6 +117,18 @@ public class ProfileService {
     private void requireOwnPhotoUrlIfPresent(String photo) {
         if (photo != null && !photo.isBlank() && !photoUrlPolicy.isOwnPhotoUrl(photo)) {
             throw new ApiException(ErrorCode.VALIDATION, "올바르지 않은 사진 주소입니다.");
+        }
+    }
+
+    /**
+     * 정해진 30개 중 하나만 허용한다 — 자유 입력을 그대로 두면 "컴공"·
+     * "컴퓨터공학과"처럼 표기가 갈려서 탐색 화면의 학과 필터가 문자열
+     * 비교에서 못 걸러낸다.
+     */
+    private void requireValidDepartmentIfPresent(String department) {
+        if (department != null && !department.isBlank()
+                && !DepartmentCatalog.VALID_DEPARTMENTS.contains(department)) {
+            throw new ApiException(ErrorCode.VALIDATION, "올바르지 않은 학과입니다.");
         }
     }
 }

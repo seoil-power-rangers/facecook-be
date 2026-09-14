@@ -2,6 +2,7 @@ package com.facecook.chat.controller;
 
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.chat.dto.ChatMessageResponse;
 import com.facecook.chat.service.ChatService;
 import com.facecook.common.exception.GlobalExceptionHandler;
@@ -63,6 +64,9 @@ class ChatRestControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {

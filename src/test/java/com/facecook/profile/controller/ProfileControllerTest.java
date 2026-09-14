@@ -2,6 +2,7 @@ package com.facecook.profile.controller;
 
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.GlobalExceptionHandler;
 import com.facecook.common.session.CurrentUserArgumentResolver;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
@@ -70,6 +71,9 @@ class ProfileControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {
@@ -241,7 +245,9 @@ class ProfileControllerTest {
                 "2학년",
                 "안녕하세요",
                 "다정한 사람",
-                "https://example.com/photo.jpg"
+                "https://example.com/photo.jpg",
+                null,
+                false
         );
     }
 

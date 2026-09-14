@@ -33,12 +33,26 @@ class ProfileServiceTest {
     @Mock
     private ProfilePhotoUrlPolicy photoUrlPolicy;
 
+    @Mock
+    private ProfileActivityLookup activityLookup;
+
     private ProfileService profileService;
 
     @BeforeEach
     void setUp() {
         lenient().when(photoUrlPolicy.isOwnPhotoUrl(any())).thenReturn(true);
-        profileService = new ProfileService(profileRepository, photoUrlPolicy);
+        // 활동 정보(lastActiveAt/isActive)는 이 테스트의 관심사가 아니라, 실제
+        // ProfileResponse.from을 그대로 위임해 null/false로 채운다.
+        lenient().when(activityLookup.toResponse(any(Profile.class)))
+                .thenAnswer(invocation -> ProfileResponse.from(invocation.getArgument(0), null, false));
+        lenient().when(activityLookup.toResponses(any()))
+                .thenAnswer(invocation -> {
+                    List<Profile> profiles = invocation.getArgument(0);
+                    return profiles.stream()
+                            .map(profile -> ProfileResponse.from(profile, null, false))
+                            .toList();
+                });
+        profileService = new ProfileService(profileRepository, photoUrlPolicy, activityLookup);
     }
 
     @Test
@@ -114,7 +128,7 @@ class ProfileServiceTest {
 
         CreateProfileRequest request = new CreateProfileRequest(
                 "cook", "female", 21, "ENFP", "요리", "A",
-                "컴퓨터공학과", "2학년", "안녕하세요", "다정한 사람",
+                "소프트웨어공학과", "2학년", "안녕하세요", "다정한 사람",
                 "https://evil.example.com/x.jpg"
         );
 
@@ -136,6 +150,67 @@ class ProfileServiceTest {
     }
 
     @Test
+    void rejectsInvalidDepartmentOnCreate() {
+        CreateProfileRequest request = new CreateProfileRequest(
+                "cook", "female", 21, "ENFP", "요리", "A",
+                "컴공", "2학년", "안녕하세요", "다정한 사람", null
+        );
+
+        assertErrorCode(() -> profileService.create(1L, request), ErrorCode.VALIDATION);
+        verify(profileRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rejectsInvalidDepartmentOnUpdate() {
+        assertErrorCode(
+                () -> profileService.update(1L, new UpdateProfileRequest("컴공", null, null, null)),
+                ErrorCode.VALIDATION
+        );
+        verify(profileRepository, never()).findById(any());
+    }
+
+    @Test
+    void getsParticipantStats() {
+        when(profileRepository.count()).thenReturn(120L);
+        when(activityLookup.activeSince()).thenReturn(java.time.LocalDateTime.of(2026, 9, 30, 12, 0));
+        when(profileRepository.countActiveSince(any())).thenReturn(37L);
+
+        var stats = profileService.getStats();
+
+        assertThat(stats.total()).isEqualTo(120L);
+        assertThat(stats.activeNow()).isEqualTo(37L);
+    }
+
+    @Test
+    void buildsFiltersFromDistinctValuesActuallyPresent() {
+        when(profileRepository.findAll()).thenReturn(List.of(
+                profile(1L, "a"),
+                profileWith(2L, "b", "소프트웨어공학과", "ENFP", "영화보기,산책"),
+                profileWith(3L, "c", "소프트웨어공학과", "INTJ", "산책,독서")
+        ));
+
+        var filters = profileService.getFilters(false);
+
+        assertThat(filters.departments()).containsExactly("소프트웨어공학과");
+        assertThat(filters.mbtis()).containsExactlyInAnyOrder("ENFP", "INTJ");
+        assertThat(filters.hobbies()).containsExactlyInAnyOrder("요리", "영화보기", "산책", "독서");
+    }
+
+    @Test
+    void filtersOnlyActiveWhenRequested() {
+        java.time.LocalDateTime since = java.time.LocalDateTime.of(2026, 9, 30, 12, 0);
+        when(activityLookup.activeSince()).thenReturn(since);
+        when(profileRepository.findAllActiveSince(since)).thenReturn(
+                List.of(profileWith(2L, "b", "소프트웨어공학과", "ENFP", "영화보기"))
+        );
+
+        var filters = profileService.getFilters(true);
+
+        assertThat(filters.departments()).containsExactly("소프트웨어공학과");
+        verify(profileRepository, never()).findAll();
+    }
+
+    @Test
     void listsProfilesExceptCurrentUser() {
         when(profileRepository.findAllByUserIdNotOrderByUserIdAsc(1L))
                 .thenReturn(List.of(profile(2L, "two"), profile(3L, "three")));
@@ -150,6 +225,13 @@ class ProfileServiceTest {
         return Profile.create(userId, createRequest(nickname));
     }
 
+    private Profile profileWith(Long userId, String nickname, String department, String mbti, String hobby) {
+        return Profile.create(userId, new CreateProfileRequest(
+                nickname, "female", 21, mbti, hobby, "A",
+                department, "2학년", "안녕하세요", "다정한 사람", null
+        ));
+    }
+
     private CreateProfileRequest createRequest(String nickname) {
         return new CreateProfileRequest(
                 nickname,
@@ -158,7 +240,7 @@ class ProfileServiceTest {
                 "ENFP",
                 "요리",
                 "A",
-                "컴퓨터공학과",
+                "소프트웨어공학과",
                 "2학년",
                 "안녕하세요",
                 "다정한 사람",

@@ -3,6 +3,7 @@ package com.facecook.common.session;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.entity.UserStatus;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import jakarta.servlet.http.Cookie;
@@ -30,6 +31,7 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
     private final SessionTokenSigner signer;
     private final SessionCookieService cookieService;
     private final UserRepository userRepository;
+    private final UserActivityService userActivityService;
 
     @Override
     public boolean preHandle(
@@ -56,6 +58,8 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
             cookieService.clear(response);
             throw new ApiException(ErrorCode.SUSPENDED);
         }
+
+        userActivityService.touch(user.getId());
 
         request.setAttribute(
                 CURRENT_USER_ATTRIBUTE,

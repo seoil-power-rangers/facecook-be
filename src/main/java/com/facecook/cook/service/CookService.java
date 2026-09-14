@@ -19,6 +19,7 @@ import com.facecook.cook.repository.MatchInfoRepository;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
+import com.facecook.profile.service.ProfileActivityLookup;
 import com.facecook.push.service.ParticipantPushNotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -58,6 +59,7 @@ public class CookService {
     private final MatchInfoRepository matchInfoRepository;
     private final CookUserRepository cookUserRepository;
     private final ProfileRepository profileRepository;
+    private final ProfileActivityLookup activityLookup;
     private final MessageRepository messageRepository;
     private final ParticipantPushNotificationService pushNotificationService;
     private final Clock clock;
@@ -223,7 +225,7 @@ public class CookService {
     private MatchResponse toMatchResponse(MatchInfo matchInfo, Long userId) {
         Long partnerId = matchInfo.otherUserId(userId);
         ProfileResponse partner = profileRepository.findById(partnerId)
-                .map(ProfileResponse::from)
+                .map(activityLookup::toResponse)
                 .orElseThrow(() -> new ApiException(ErrorCode.PROFILE_NOT_FOUND));
         RecentMessageResponse recentMessage = matchInfoRepository.findRecentMessage(matchInfo.getId())
                 .map(RecentMessageResponse::from)
@@ -249,8 +251,7 @@ public class CookService {
     }
 
     private Map<Long, ProfileResponse> profileResponses(Collection<Long> userIds) {
-        return profileRepository.findAllById(userIds).stream()
-                .map(ProfileResponse::from)
+        return activityLookup.toResponses(profileRepository.findAllById(userIds)).stream()
                 .collect(Collectors.toMap(ProfileResponse::userId, Function.identity()));
     }
 
