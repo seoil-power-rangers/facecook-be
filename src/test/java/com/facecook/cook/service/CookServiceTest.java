@@ -318,7 +318,7 @@ class CookServiceTest {
         RecentMessageProjection message = recentMessage(2L, "안녕하세요", EVENT_NOW.minusMinutes(1));
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
-        when(profileRepository.findById(2L)).thenReturn(Optional.of(profile(2L, "partner")));
+        when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
         when(matchInfoRepository.findRecentMessage(20L)).thenReturn(Optional.of(message));
 
         var responses = cookService.getMatches(1L);
@@ -328,6 +328,24 @@ class CookServiceTest {
             assertThat(response.partner().nickname()).isEqualTo("partner");
             assertThat(response.recentMessage().content()).isEqualTo("안녕하세요");
         });
+    }
+
+    @Test
+    void batchesPartnerProfileLookupAcrossMatchesInsteadOfPerMatch() {
+        MatchInfo matchWithUser2 = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
+        MatchInfo matchWithUser3 = match(21L, 1L, 3L, EVENT_NOW.minusMinutes(5));
+        when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
+                .thenReturn(List.of(matchWithUser2, matchWithUser3));
+        when(profileRepository.findAllById(List.of(2L, 3L)))
+                .thenReturn(List.of(profile(2L, "two"), profile(3L, "three")));
+
+        var responses = cookService.getMatches(1L);
+
+        assertThat(responses).extracting(response -> response.partner().nickname())
+                .containsExactly("two", "three");
+        // 매칭이 2건이어도 상대 프로필 조회는 한 번(findAllById)만 나가야 한다 — N+1 회귀 방지.
+        verify(profileRepository, never()).findById(any());
+        verify(profileRepository).findAllById(List.of(2L, 3L));
     }
 
     @Test
@@ -344,7 +362,7 @@ class CookServiceTest {
         MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
-        when(profileRepository.findById(2L)).thenReturn(Optional.of(profile(2L, "partner")));
+        when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
         when(messageRepository.countByMatchIdAndSenderIdNot(20L, 1L)).thenReturn(3L);
 
         var responses = cookService.getMatches(1L);
@@ -362,7 +380,7 @@ class CookServiceTest {
         match.markRead(1L, lastReadAt);
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
-        when(profileRepository.findById(2L)).thenReturn(Optional.of(profile(2L, "partner")));
+        when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
         when(messageRepository.countByMatchIdAndSenderIdNotAndSentAtAfter(20L, 1L, lastReadAt)).thenReturn(1L);
 
         var responses = cookService.getMatches(1L);

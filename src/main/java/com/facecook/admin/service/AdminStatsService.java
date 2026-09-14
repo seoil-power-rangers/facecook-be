@@ -45,6 +45,13 @@ public class AdminStatsService {
         );
     }
 
+    /**
+     * 이 "활동 중" 기준은 참가자용 GET /api/stats(ProfileActivityLookup, 15분
+     * 롤링 기준)와 일부러 다르다. 여긴 하루 단위 운영 리포트용이라 자정
+     * 기준으로 하루치를 세고, 참가자 화면은 "지금 접속해 있나"를 실시간에
+     * 가깝게 보여줘야 해서 짧은 롤링 창을 쓴다. 두 수치가 다르게 보여도
+     * 버그가 아니라 의도된 차이다 — 하나로 통일하지 않는다.
+     */
     private long countActiveUsers() {
         if (properties.activeUserCriterion() == ActiveUserCriterion.STATUS) {
             return userRepository.countByStatus(UserStatus.ACTIVE);

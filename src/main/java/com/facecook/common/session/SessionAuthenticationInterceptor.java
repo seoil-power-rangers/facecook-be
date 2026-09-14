@@ -10,6 +10,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,7 @@ import java.util.Optional;
  * 역할·정지여부를 토큰에 담지 않고 항상 DB를 조회하는 이유는, 계정이 방금
  * 정지돼도(예: 신고 처리) 이미 발급된 세션이 즉시 막히게 하기 위함이다.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SessionAuthenticationInterceptor implements HandlerInterceptor {
@@ -59,7 +61,13 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
             throw new ApiException(ErrorCode.SUSPENDED);
         }
 
-        userActivityService.touch(user.getId());
+        // 활동기록은 부가 기능이다 — 이게 실패한다고 인증 자체(그리고 그 뒤에
+        // 이어질 무관한 API 요청)까지 500으로 막으면 안 된다.
+        try {
+            userActivityService.touch(user.getId());
+        } catch (RuntimeException exception) {
+            log.warn("활동 시각 갱신에 실패했습니다. userId={}", user.getId(), exception);
+        }
 
         request.setAttribute(
                 CURRENT_USER_ATTRIBUTE,

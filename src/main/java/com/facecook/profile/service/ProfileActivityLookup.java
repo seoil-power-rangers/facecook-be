@@ -64,7 +64,14 @@ public class ProfileActivityLookup {
         return ProfileResponse.from(profile, lastActiveAt, isActive);
     }
 
-    /** "지금 활동 중"으로 칠 수 있는 가장 오래된 시각. 목록·필터·통계가 같은 기준을 쓰도록 공개한다. */
+    /**
+     * "지금 활동 중"으로 칠 수 있는 가장 오래된 시각. 목록·필터·통계(참가자용
+     * GET /api/stats)가 같은 기준을 쓰도록 공개한다.
+     *
+     * AdminStatsService.countActiveUsers()의 "활동 유저" 기준(자정부터
+     * 하루 단위)과는 일부러 다르다 — 그쪽은 하루 단위 운영 리포트, 여긴
+     * 실시간에 가까운 참가자 화면용이라 통일하지 않는다.
+     */
     public LocalDateTime activeSince() {
         return now().minusMinutes(properties.activeWindowMinutes());
     }

@@ -72,9 +72,13 @@ public class ProfileController {
     @GetMapping("/profiles/filters")
     public ResponseEntity<ProfileFiltersResponse> getFilters(
             @CurrentUser AuthenticatedUser currentUser,
-            @RequestParam(defaultValue = "false") boolean active
+            // boolean으로 받으면 ?active=(빈 값)처럼 파라미터는 있는데 값이 빈
+            // 문자열일 때 defaultValue가 적용되지 않아 타입 변환 예외가 난다.
+            // String으로 받고 Boolean.parseBoolean으로 직접 판단하면(빈 값·
+            // "true" 외 어떤 값이든 false로 취급) 예외 없이 항상 처리된다.
+            @RequestParam(defaultValue = "false") String active
     ) {
-        return ResponseEntity.ok(profileService.getFilters(active));
+        return ResponseEntity.ok(profileService.getFilters(Boolean.parseBoolean(active)));
     }
 
     @GetMapping("/profiles/{userId}")
