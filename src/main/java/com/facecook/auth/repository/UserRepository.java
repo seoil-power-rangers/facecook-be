@@ -23,8 +23,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
             LocalDateTime endExclusive
     );
 
-    long countByLastActiveAtGreaterThanEqual(LocalDateTime startInclusive);
-
     /**
      * 컬럼 하나만 바꾸는 벌크 업데이트다 — 매 요청마다 엔티티를 통째로
      * 읽고 쓰면(findById 후 save) 낭비가 크다.

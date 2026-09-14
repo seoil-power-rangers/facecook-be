@@ -1,6 +1,6 @@
 # face 콕 — API 명세
 
-정리 기준일: 2026-09-03
+정리 기준일: 2026-09-14
 
 - 인증: 세션 쿠키(HttpOnly) 기반. `[참가자]` = 로그인한 참가자 세션 필요, `[관리자]` = 관리자 세션 필요, `[공개]` = 인증 불필요
 - 응답 포맷: JSON, 실패 시 `{ "code": "ERROR_CODE", "message": "..." }`
@@ -104,11 +104,34 @@
 
 | Method | Path | 설명 | 인증 |
 | --- | --- | --- | --- |
+| POST | `/api/profile/photo/upload-url` | S3 업로드용 presigned URL 발급 (`contentType`) → `{ uploadUrl, photoUrl }` | 참가자 |
 | GET | `/api/profile` | 내 프로필 조회 | 참가자 |
 | POST | `/api/profile` | 필수+선택 프로필 최초 등록 (`nickname, gender, age, mbti, hobby, bloodType, department?, grade?, bio?, idealType?, photo?`) | 참가자 |
 | PATCH | `/api/profile` | 선택 항목만 수정 (`department?, grade?, bio?, photo?`) — 필수 필드는 요청 자체에 안 받음 | 참가자 |
 | GET | `/api/profiles` | 참가자 목록 (본인 제외) | 참가자 |
+| GET | `/api/profiles/filters?active=` | 실제 참가자가 가진 학과·MBTI·취미 값(정렬됨). `active=true`면 활동 중인 참가자만 대상 | 참가자 |
 | GET | `/api/profiles/{userId}` | 특정 참가자 프로필 상세 | 참가자 |
+| GET | `/api/stats` | 참가자용 `{ total, activeNow }` — 등록된 프로필 수, 최근 15분 내 활동한 참가자 수 | 참가자 |
+
+### 프로필 응답의 활동 정보
+
+`GET /api/profile`, `GET /api/profiles`, `GET /api/profiles/{userId}`의 각 항목에
+`lastActiveAt`(ISO 8601 문자열, 활동 기록 없으면 `null`)과 `isActive`(boolean)가
+포함된다. "활동 중" 기준은 서버가 관리하는 최근 15분 롤링 윈도우다
+(`app.profile.activity.active-window-minutes`, 기본 15) — 클라이언트가 별도로
+계산하지 않는다.
+
+`users.last_active_at`은 인증된 요청마다 갱신되지만, 같은 사용자에 대해
+30초 안에 이미 갱신됐으면 다시 쓰지 않는다(디바운스) — 폴링이 잦은 화면이
+많아 매 요청마다 쓰기를 발생시키지 않기 위함이다.
+
+### 학과(`department`) 값 검증
+
+`POST /api/profile`, `PATCH /api/profile`의 `department`는 정해진 30개
+(학부 7개, facecook-fe `ui/공통/constants.ts`의 `COLLEGES`와 동일) 중 하나만
+허용한다. 목록에 없는 값이면 `VALIDATION` 400을 반환한다. 자유 입력이던
+시절 가입자에게 남은 값은 그대로 유지되며(기존 데이터는 소급 검증하지 않음),
+새로 저장되는 값만 검증 대상이다.
 
 ## 3. 콕찔러보기 / 매칭
 
@@ -185,11 +208,14 @@
 }
 ```
 
-- `activeToday`는 기본적으로 `users.status = ACTIVE`인 사용자 수다. 현재
-  `last_active_at` 갱신 로직이 없어 실제 당일 활동 수를 신뢰할 수 없기 때문이다.
+- `activeToday`는 기본적으로 `users.status = ACTIVE`인 사용자 수다.
 - `ADMIN_STATS_ACTIVE_USER_CRITERION=LAST_ACTIVE_TODAY`로 설정하면
-  `Asia/Seoul` 기준 당일 `last_active_at`이 기록된 사용자 수를 집계한다. 이 기준은
-  사용자 활동 시각 갱신 로직을 도입한 뒤 사용한다.
+  `Asia/Seoul` 기준 당일 `last_active_at`이 기록된 사용자 수를 집계한다.
+  `last_active_at`은 인증된 요청마다 갱신되므로(2절 참고) 이 기준을 실제로
+  쓸 수 있다.
+- 이 "하루 단위" 기준은 참가자용 `GET /api/stats`의 `activeNow`(15분 롤링
+  기준)와 일부러 다르다 — 여긴 운영 리포트용, 그쪽은 실시간에 가까운
+  참가자 화면용이라 두 수치가 다르게 나오는 게 정상이다.
 
 ## 8. 알림 (웹 푸시)
 

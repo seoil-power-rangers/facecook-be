@@ -3,14 +3,12 @@ package com.facecook.common.session;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.entity.UserStatus;
 import com.facecook.auth.repository.UserRepository;
-import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
@@ -22,8 +20,11 @@ import java.util.Optional;
  * 세션 쿠키를 검증하고, 요청마다 DB에서 계정 상태를 다시 확인한다.
  * 역할·정지여부를 토큰에 담지 않고 항상 DB를 조회하는 이유는, 계정이 방금
  * 정지돼도(예: 신고 처리) 이미 발급된 세션이 즉시 막히게 하기 위함이다.
+ *
+ * 활동 시각 기록은 이 클래스의 책임이 아니다 — ActivityTrackingInterceptor가
+ * 이 인터셉터 다음 순서로 등록되어(WebConfig), 여기서 설정한
+ * CURRENT_USER_ATTRIBUTE를 읽어 처리한다.
  */
-@Slf4j
 @Component
 @RequiredArgsConstructor
 public class SessionAuthenticationInterceptor implements HandlerInterceptor {
@@ -33,7 +34,6 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
     private final SessionTokenSigner signer;
     private final SessionCookieService cookieService;
     private final UserRepository userRepository;
-    private final UserActivityService userActivityService;
 
     @Override
     public boolean preHandle(
@@ -59,14 +59,6 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
         if (user.getStatus() == UserStatus.SUSPENDED) {
             cookieService.clear(response);
             throw new ApiException(ErrorCode.SUSPENDED);
-        }
-
-        // 활동기록은 부가 기능이다 — 이게 실패한다고 인증 자체(그리고 그 뒤에
-        // 이어질 무관한 API 요청)까지 500으로 막으면 안 된다.
-        try {
-            userActivityService.touch(user.getId());
-        } catch (RuntimeException exception) {
-            log.warn("활동 시각 갱신에 실패했습니다. userId={}", user.getId(), exception);
         }
 
         request.setAttribute(

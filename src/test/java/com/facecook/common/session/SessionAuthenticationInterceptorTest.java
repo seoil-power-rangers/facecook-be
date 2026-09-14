@@ -2,7 +2,6 @@ package com.facecook.common.session;
 
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
-import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import jakarta.servlet.http.Cookie;
@@ -20,10 +19,6 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,38 +37,34 @@ class SessionAuthenticationInterceptorTest {
     @Mock
     private UserRepository userRepository;
 
-    @Mock
-    private UserActivityService userActivityService;
-
     private SessionAuthenticationInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
-        interceptor = new SessionAuthenticationInterceptor(signer, cookieService, userRepository, userActivityService);
+        interceptor = new SessionAuthenticationInterceptor(signer, cookieService, userRepository);
         when(cookieService.cookieName()).thenReturn(COOKIE_NAME);
     }
 
     @Test
-    void proceedsEvenWhenActivityTrackingFails() {
+    void setsAuthenticatedUserAttributeForValidSession() {
         givenValidSession(activeUser());
-        doThrow(new RuntimeException("db hiccup")).when(userActivityService).touch(USER_ID);
 
         MockHttpServletRequest request = requestWithCookie();
         boolean result = interceptor.preHandle(request, new MockHttpServletResponse(), new Object());
 
         assertThat(result).isTrue();
-        assertThat(request.getAttribute(SessionAuthenticationInterceptor.CURRENT_USER_ATTRIBUTE)).isNotNull();
+        assertThat(request.getAttribute(SessionAuthenticationInterceptor.CURRENT_USER_ATTRIBUTE))
+                .isInstanceOfSatisfying(AuthenticatedUser.class, user -> assertThat(user.userId()).isEqualTo(USER_ID));
     }
 
     @Test
-    void rejectsSuspendedUserBeforeTouchingActivity() {
+    void rejectsSuspendedUser() {
         givenValidSession(suspendedUser());
 
         assertThatThrownBy(() -> interceptor.preHandle(requestWithCookie(), new MockHttpServletResponse(), new Object()))
                 .isInstanceOfSatisfying(ApiException.class, exception ->
                         assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.SUSPENDED)
                 );
-        verify(userActivityService, never()).touch(any());
     }
 
     private void givenValidSession(User user) {
