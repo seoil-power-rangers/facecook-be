@@ -1,5 +1,6 @@
 package com.facecook.config;
 
+import com.facecook.common.session.ActivityTrackingInterceptor;
 import com.facecook.common.session.CurrentUserArgumentResolver;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final CorsProperties corsProperties;
     private final SessionAuthenticationInterceptor sessionAuthenticationInterceptor;
+    private final ActivityTrackingInterceptor activityTrackingInterceptor;
     private final CurrentUserArgumentResolver currentUserArgumentResolver;
 
     @Override
@@ -42,6 +44,12 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(sessionAuthenticationInterceptor)
+                .addPathPatterns("/api/**")
+                .excludePathPatterns(PUBLIC_AUTH_PATHS);
+        // sessionAuthenticationInterceptor 다음 순서로 등록해야 한다 — 이
+        // 인터셉터가 CURRENT_USER_ATTRIBUTE를 먼저 채워둬야 활동기록이 누구
+        // 것인지 알 수 있다.
+        registry.addInterceptor(activityTrackingInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(PUBLIC_AUTH_PATHS);
     }

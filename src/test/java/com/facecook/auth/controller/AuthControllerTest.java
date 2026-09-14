@@ -4,8 +4,10 @@ import com.facecook.auth.dto.AuthVerificationResponse;
 import com.facecook.auth.dto.RequestCodeResponse;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.auth.service.AuthService;
 import com.facecook.common.exception.GlobalExceptionHandler;
+import com.facecook.common.session.ActivityTrackingInterceptor;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
 import com.facecook.common.session.SessionCookieService;
 import com.facecook.common.session.SessionProperties;
@@ -44,6 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class,
         WebConfig.class,
         SessionAuthenticationInterceptor.class,
+        ActivityTrackingInterceptor.class,
         CurrentUserArgumentResolver.class,
         SessionTokenSigner.class,
         SessionCookieService.class,
@@ -65,6 +68,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {

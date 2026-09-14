@@ -2,8 +2,10 @@ package com.facecook.profile.controller;
 
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.GlobalExceptionHandler;
 import com.facecook.common.session.CurrentUserArgumentResolver;
+import com.facecook.common.session.ActivityTrackingInterceptor;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
 import com.facecook.common.session.SessionCookieService;
 import com.facecook.common.session.SessionProperties;
@@ -45,6 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class,
         WebConfig.class,
         SessionAuthenticationInterceptor.class,
+        ActivityTrackingInterceptor.class,
         CurrentUserArgumentResolver.class,
         SessionTokenSigner.class,
         SessionCookieService.class,
@@ -70,6 +73,9 @@ class ProfileControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {
@@ -179,6 +185,43 @@ class ProfileControllerTest {
     }
 
     @Test
+    void getsFiltersWithoutActiveParam() throws Exception {
+        authenticateCurrentUser();
+        when(profileService.getFilters(false))
+                .thenReturn(new com.facecook.profile.dto.ProfileFiltersResponse(
+                        List.of("소프트웨어공학과"), List.of("ENFP"), List.of("영화보기")
+                ));
+
+        mockMvc.perform(get("/api/profiles/filters").cookie(validCookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.departments[0]").value("소프트웨어공학과"));
+    }
+
+    @Test
+    void getsFiltersWithEmptyActiveValueWithoutError() throws Exception {
+        // ?active=처럼 값이 빈 문자열이면 boolean 파라미터는 defaultValue가
+        // 안 먹고 예외가 났었다(회귀 방지). String으로 받아 Boolean.parseBoolean으로
+        // 직접 판단하면 빈 값도 false로 처리되어 정상 200이 나와야 한다.
+        authenticateCurrentUser();
+        when(profileService.getFilters(false))
+                .thenReturn(new com.facecook.profile.dto.ProfileFiltersResponse(List.of(), List.of(), List.of()));
+
+        mockMvc.perform(get("/api/profiles/filters?active=").cookie(validCookie()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getsFiltersWithActiveTrue() throws Exception {
+        authenticateCurrentUser();
+        when(profileService.getFilters(true))
+                .thenReturn(new com.facecook.profile.dto.ProfileFiltersResponse(List.of("소프트웨어공학과"), List.of(), List.of()));
+
+        mockMvc.perform(get("/api/profiles/filters?active=true").cookie(validCookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.departments[0]").value("소프트웨어공학과"));
+    }
+
+    @Test
     void getsParticipantProfileByUserId() throws Exception {
         authenticateCurrentUser();
         when(profileService.get(8L)).thenReturn(profile(8L, "other"));
@@ -241,7 +284,9 @@ class ProfileControllerTest {
                 "2학년",
                 "안녕하세요",
                 "다정한 사람",
-                "https://example.com/photo.jpg"
+                "https://example.com/photo.jpg",
+                null,
+                false
         );
     }
 

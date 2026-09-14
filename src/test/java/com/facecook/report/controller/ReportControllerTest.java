@@ -3,8 +3,10 @@ package com.facecook.report.controller;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.entity.UserRole;
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.auth.service.UserActivityService;
 import com.facecook.common.exception.GlobalExceptionHandler;
 import com.facecook.common.session.CurrentUserArgumentResolver;
+import com.facecook.common.session.ActivityTrackingInterceptor;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
 import com.facecook.common.session.SessionCookieService;
 import com.facecook.common.session.SessionProperties;
@@ -44,6 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class,
         WebConfig.class,
         SessionAuthenticationInterceptor.class,
+        ActivityTrackingInterceptor.class,
         CurrentUserArgumentResolver.class,
         SessionTokenSigner.class,
         SessionCookieService.class,
@@ -65,6 +68,9 @@ class ReportControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private UserActivityService userActivityService;
 
     @TestConfiguration
     static class SessionTestConfig {

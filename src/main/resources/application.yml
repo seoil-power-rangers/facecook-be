@@ -68,6 +68,9 @@ app:
     # 앞단에 두게 되면 그 도메인으로 덮어쓴다.
     public-base-url: ${S3_PUBLIC_BASE_URL:}
     presign-ttl-seconds: ${S3_PRESIGN_TTL_SECONDS:300}
+  profile:
+    activity:
+      active-window-minutes: ${PROFILE_ACTIVE_WINDOW_MINUTES:15}
 
 server:
   port: 8080

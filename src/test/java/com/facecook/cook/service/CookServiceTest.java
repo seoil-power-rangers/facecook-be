@@ -13,8 +13,10 @@ import com.facecook.cook.repository.CookUserRepository;
 import com.facecook.cook.repository.MatchInfoRepository;
 import com.facecook.cook.repository.RecentMessageProjection;
 import com.facecook.profile.dto.CreateProfileRequest;
+import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
+import com.facecook.profile.service.ProfileActivityLookup;
 import com.facecook.push.service.ParticipantPushNotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +60,9 @@ class CookServiceTest {
     private ProfileRepository profileRepository;
 
     @Mock
+    private ProfileActivityLookup activityLookup;
+
+    @Mock
     private MessageRepository messageRepository;
 
     @Mock
@@ -67,11 +72,24 @@ class CookServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 활동 정보(lastActiveAt/isActive)는 이 테스트의 관심사가 아니라, 실제
+        // ProfileResponse.from을 그대로 위임해 null/false로 채운다.
+        org.mockito.Mockito.lenient().when(activityLookup.toResponse(any(Profile.class)))
+                .thenAnswer(invocation -> ProfileResponse.from(invocation.getArgument(0), null, false));
+        org.mockito.Mockito.lenient().when(activityLookup.toResponses(any()))
+                .thenAnswer(invocation -> {
+                    List<Profile> profiles = invocation.getArgument(0);
+                    return profiles.stream()
+                            .map(profile -> ProfileResponse.from(profile, null, false))
+                            .toList();
+                });
+
         cookService = new CookService(
                 cookRepository,
                 matchInfoRepository,
                 cookUserRepository,
                 profileRepository,
+                activityLookup,
                 messageRepository,
                 pushNotificationService,
                 Clock.fixed(NOW, ZoneOffset.UTC)
@@ -175,7 +193,7 @@ class CookServiceTest {
         Clock secondDay = Clock.fixed(Instant.parse("2026-10-01T03:00:00Z"), ZoneOffset.UTC);
         CookService secondDayService = new CookService(
                 cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
-                messageRepository, pushNotificationService, secondDay
+                activityLookup, messageRepository, pushNotificationService, secondDay
         );
         givenLockedUsers(1L, 2L);
         when(cookRepository.countBySentAtGreaterThanEqualAndSentAtLessThan(
@@ -191,7 +209,7 @@ class CookServiceTest {
         Clock beforeEvent = Clock.fixed(Instant.parse("2026-01-01T03:00:00Z"), ZoneOffset.UTC);
         CookService devService = new CookService(
                 cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
-                messageRepository, pushNotificationService, beforeEvent
+                activityLookup, messageRepository, pushNotificationService, beforeEvent
         );
         givenLockedUsers(1L, 2L);
         when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -300,7 +318,7 @@ class CookServiceTest {
         RecentMessageProjection message = recentMessage(2L, "안녕하세요", EVENT_NOW.minusMinutes(1));
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
-        when(profileRepository.findById(2L)).thenReturn(Optional.of(profile(2L, "partner")));
+        when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
         when(matchInfoRepository.findRecentMessage(20L)).thenReturn(Optional.of(message));
 
         var responses = cookService.getMatches(1L);
@@ -310,6 +328,24 @@ class CookServiceTest {
             assertThat(response.partner().nickname()).isEqualTo("partner");
             assertThat(response.recentMessage().content()).isEqualTo("안녕하세요");
         });
+    }
+
+    @Test
+    void batchesPartnerProfileLookupAcrossMatchesInsteadOfPerMatch() {
+        MatchInfo matchWithUser2 = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
+        MatchInfo matchWithUser3 = match(21L, 1L, 3L, EVENT_NOW.minusMinutes(5));
+        when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
+                .thenReturn(List.of(matchWithUser2, matchWithUser3));
+        when(profileRepository.findAllById(List.of(2L, 3L)))
+                .thenReturn(List.of(profile(2L, "two"), profile(3L, "three")));
+
+        var responses = cookService.getMatches(1L);
+
+        assertThat(responses).extracting(response -> response.partner().nickname())
+                .containsExactly("two", "three");
+        // 매칭이 2건이어도 상대 프로필 조회는 한 번(findAllById)만 나가야 한다 — N+1 회귀 방지.
+        verify(profileRepository, never()).findById(any());
+        verify(profileRepository).findAllById(List.of(2L, 3L));
     }
 
     @Test
@@ -326,7 +362,7 @@ class CookServiceTest {
         MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
-        when(profileRepository.findById(2L)).thenReturn(Optional.of(profile(2L, "partner")));
+        when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
         when(messageRepository.countByMatchIdAndSenderIdNot(20L, 1L)).thenReturn(3L);
 
         var responses = cookService.getMatches(1L);
@@ -344,7 +380,7 @@ class CookServiceTest {
         match.markRead(1L, lastReadAt);
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
-        when(profileRepository.findById(2L)).thenReturn(Optional.of(profile(2L, "partner")));
+        when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
         when(messageRepository.countByMatchIdAndSenderIdNotAndSentAtAfter(20L, 1L, lastReadAt)).thenReturn(1L);
 
         var responses = cookService.getMatches(1L);

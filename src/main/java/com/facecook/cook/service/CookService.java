@@ -19,6 +19,7 @@ import com.facecook.cook.repository.MatchInfoRepository;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
+import com.facecook.profile.service.ProfileActivityLookup;
 import com.facecook.push.service.ParticipantPushNotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -58,6 +59,7 @@ public class CookService {
     private final MatchInfoRepository matchInfoRepository;
     private final CookUserRepository cookUserRepository;
     private final ProfileRepository profileRepository;
+    private final ProfileActivityLookup activityLookup;
     private final MessageRepository messageRepository;
     private final ParticipantPushNotificationService pushNotificationService;
     private final Clock clock;
@@ -163,8 +165,13 @@ public class CookService {
 
     @Transactional(readOnly = true)
     public List<MatchResponse> getMatches(Long userId) {
-        return matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(userId, userId).stream()
-                .map(matchInfo -> toMatchResponse(matchInfo, userId))
+        List<MatchInfo> matches = matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(userId, userId);
+        // 매칭마다 상대 프로필을 따로 조회하면 N+1이 난다 — 한 번에 배치 조회한다.
+        Map<Long, ProfileResponse> partnerProfiles = profileResponses(
+                matches.stream().map(matchInfo -> matchInfo.otherUserId(userId)).toList()
+        );
+        return matches.stream()
+                .map(matchInfo -> toMatchResponse(matchInfo, userId, partnerProfiles))
                 .toList();
     }
 
@@ -175,7 +182,8 @@ public class CookService {
         if (!matchInfo.includes(userId)) {
             throw new ApiException(ErrorCode.FORBIDDEN);
         }
-        return toMatchResponse(matchInfo, userId);
+        Long partnerId = matchInfo.otherUserId(userId);
+        return toMatchResponse(matchInfo, userId, profileResponses(List.of(partnerId)));
     }
 
     private void enforceEventWideDailyLimit(LocalDate today, DateRange range) {
@@ -220,10 +228,9 @@ public class CookService {
         return CookItemResponse.from(cook, userId, profiles.get(otherUserId));
     }
 
-    private MatchResponse toMatchResponse(MatchInfo matchInfo, Long userId) {
+    private MatchResponse toMatchResponse(MatchInfo matchInfo, Long userId, Map<Long, ProfileResponse> partnerProfiles) {
         Long partnerId = matchInfo.otherUserId(userId);
-        ProfileResponse partner = profileRepository.findById(partnerId)
-                .map(ProfileResponse::from)
+        ProfileResponse partner = Optional.ofNullable(partnerProfiles.get(partnerId))
                 .orElseThrow(() -> new ApiException(ErrorCode.PROFILE_NOT_FOUND));
         RecentMessageResponse recentMessage = matchInfoRepository.findRecentMessage(matchInfo.getId())
                 .map(RecentMessageResponse::from)
@@ -249,8 +256,7 @@ public class CookService {
     }
 
     private Map<Long, ProfileResponse> profileResponses(Collection<Long> userIds) {
-        return profileRepository.findAllById(userIds).stream()
-                .map(ProfileResponse::from)
+        return activityLookup.toResponses(profileRepository.findAllById(userIds)).stream()
                 .collect(Collectors.toMap(ProfileResponse::userId, Function.identity()));
     }
 

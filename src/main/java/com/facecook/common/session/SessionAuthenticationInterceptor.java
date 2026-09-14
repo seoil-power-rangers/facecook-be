@@ -20,6 +20,10 @@ import java.util.Optional;
  * 세션 쿠키를 검증하고, 요청마다 DB에서 계정 상태를 다시 확인한다.
  * 역할·정지여부를 토큰에 담지 않고 항상 DB를 조회하는 이유는, 계정이 방금
  * 정지돼도(예: 신고 처리) 이미 발급된 세션이 즉시 막히게 하기 위함이다.
+ *
+ * 활동 시각 기록은 이 클래스의 책임이 아니다 — ActivityTrackingInterceptor가
+ * 이 인터셉터 다음 순서로 등록되어(WebConfig), 여기서 설정한
+ * CURRENT_USER_ATTRIBUTE를 읽어 처리한다.
  */
 @Component
 @RequiredArgsConstructor
