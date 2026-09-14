@@ -38,6 +38,8 @@ dependencies {
 	implementation 'org.apache.httpcomponents:httpasyncclient:4.1.5'
 	implementation 'org.bitbucket.b_c:jose4j:0.7.9'
 	implementation 'org.bouncycastle:bcprov-jdk18on:1.81'
+	implementation platform('software.amazon.awssdk:bom:2.29.52')
+	implementation 'software.amazon.awssdk:s3'
 
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'

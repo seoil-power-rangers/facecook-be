@@ -3,8 +3,11 @@ package com.facecook.profile.controller;
 import com.facecook.common.session.AuthenticatedUser;
 import com.facecook.common.session.CurrentUser;
 import com.facecook.profile.dto.CreateProfileRequest;
+import com.facecook.profile.dto.PhotoUploadUrlRequest;
+import com.facecook.profile.dto.PhotoUploadUrlResponse;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.dto.UpdateProfileRequest;
+import com.facecook.profile.service.ProfilePhotoUploadService;
 import com.facecook.profile.service.ProfileService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +28,15 @@ import java.util.List;
 public class ProfileController {
 
     private final ProfileService profileService;
+    private final ProfilePhotoUploadService profilePhotoUploadService;
+
+    @PostMapping("/profile/photo/upload-url")
+    public ResponseEntity<PhotoUploadUrlResponse> issuePhotoUploadUrl(
+            @CurrentUser AuthenticatedUser currentUser,
+            @Valid @RequestBody PhotoUploadUrlRequest request
+    ) {
+        return ResponseEntity.ok(profilePhotoUploadService.issueUploadUrl(request.contentType()));
+    }
 
     @PostMapping("/profile")
     public ResponseEntity<ProfileResponse> create(

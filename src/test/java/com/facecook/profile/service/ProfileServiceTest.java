@@ -19,6 +19,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,11 +30,15 @@ class ProfileServiceTest {
     @Mock
     private ProfileRepository profileRepository;
 
+    @Mock
+    private ProfilePhotoUrlPolicy photoUrlPolicy;
+
     private ProfileService profileService;
 
     @BeforeEach
     void setUp() {
-        profileService = new ProfileService(profileRepository);
+        lenient().when(photoUrlPolicy.isOwnPhotoUrl(any())).thenReturn(true);
+        profileService = new ProfileService(profileRepository, photoUrlPolicy);
     }
 
     @Test
@@ -98,6 +103,33 @@ class ProfileServiceTest {
     void rejectsUpdateWithoutAnyFields() {
         assertErrorCode(
                 () -> profileService.update(1L, new UpdateProfileRequest(null, null, null, null)),
+                ErrorCode.VALIDATION
+        );
+        verify(profileRepository, never()).findById(any());
+    }
+
+    @Test
+    void rejectsForeignPhotoUrlOnCreate() {
+        when(photoUrlPolicy.isOwnPhotoUrl("https://evil.example.com/x.jpg")).thenReturn(false);
+
+        CreateProfileRequest request = new CreateProfileRequest(
+                "cook", "female", 21, "ENFP", "요리", "A",
+                "컴퓨터공학과", "2학년", "안녕하세요", "다정한 사람",
+                "https://evil.example.com/x.jpg"
+        );
+
+        assertErrorCode(() -> profileService.create(1L, request), ErrorCode.VALIDATION);
+    }
+
+    @Test
+    void rejectsForeignPhotoUrlOnUpdate() {
+        when(photoUrlPolicy.isOwnPhotoUrl("https://evil.example.com/x.jpg")).thenReturn(false);
+
+        assertErrorCode(
+                () -> profileService.update(
+                        1L,
+                        new UpdateProfileRequest(null, null, null, "https://evil.example.com/x.jpg")
+                ),
                 ErrorCode.VALIDATION
         );
         verify(profileRepository, never()).findById(any());

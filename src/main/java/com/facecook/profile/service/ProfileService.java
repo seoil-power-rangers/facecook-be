@@ -19,12 +19,14 @@ import java.util.List;
 public class ProfileService {
 
     private final ProfileRepository profileRepository;
+    private final ProfilePhotoUrlPolicy photoUrlPolicy;
 
     @Transactional
     public ProfileResponse create(Long userId, CreateProfileRequest request) {
         if (profileRepository.existsById(userId)) {
             throw new ApiException(ErrorCode.PROFILE_ALREADY_EXISTS);
         }
+        requireOwnPhotoUrlIfPresent(request.photo());
 
         try {
             Profile profile = profileRepository.saveAndFlush(Profile.create(userId, request));
@@ -44,6 +46,7 @@ public class ProfileService {
         if (!request.hasChanges()) {
             throw new ApiException(ErrorCode.VALIDATION, "수정할 프로필 항목을 입력해주세요.");
         }
+        requireOwnPhotoUrlIfPresent(request.photo());
 
         Profile profile = findProfile(userId);
         profile.update(request);
@@ -60,5 +63,12 @@ public class ProfileService {
     private Profile findProfile(Long userId) {
         return profileRepository.findById(userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.PROFILE_NOT_FOUND));
+    }
+
+    /** photo 필드에 우리 업로드 API가 내준 게 아닌 임의의 URL이 그대로 저장되지 않게 막는다. */
+    private void requireOwnPhotoUrlIfPresent(String photo) {
+        if (photo != null && !photo.isBlank() && !photoUrlPolicy.isOwnPhotoUrl(photo)) {
+            throw new ApiException(ErrorCode.VALIDATION, "올바르지 않은 사진 주소입니다.");
+        }
     }
 }
