@@ -84,9 +84,7 @@ public class AuthService {
     @Transactional(readOnly = true)
     public AuthVerificationResponse login(PasswordLoginRequest request) {
         String email = EmailAddress.normalize(request.email());
-        User user = userRepository.findByEmail(email)
-                .filter(candidate -> candidate.getRole() == UserRole.PARTICIPANT)
-                .orElse(null);
+        User user = userRepository.findByEmail(email).orElse(null);
         if (user == null) {
             passwordEncoder.matches(request.password(), DUMMY_PASSWORD_HASH);
             throw new ApiException(ErrorCode.INVALID_CREDENTIALS);

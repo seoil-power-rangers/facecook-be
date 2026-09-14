@@ -7,6 +7,7 @@ import com.facecook.auth.dto.VerificationPurpose;
 import com.facecook.auth.dto.VerifyLoginRequest;
 import com.facecook.auth.dto.VerifySignupRequest;
 import com.facecook.auth.entity.User;
+import com.facecook.auth.entity.UserRole;
 import com.facecook.auth.repository.UserRepository;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
@@ -18,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -159,6 +161,19 @@ class AuthServiceTest {
 
         assertThat(response.email()).isEqualTo("user@example.com");
         assertThat(response.role()).isEqualTo("participant");
+    }
+
+    @Test
+    void logsInAdminWithPassword() {
+        User admin = participantWithPassword("admin@example.com", "password123");
+        ReflectionTestUtils.setField(admin, "role", UserRole.ADMIN);
+        when(userRepository.findByEmail("admin@example.com")).thenReturn(Optional.of(admin));
+
+        AuthVerificationResponse response = authService.login(
+                new PasswordLoginRequest("admin@example.com", "password123")
+        );
+
+        assertThat(response.role()).isEqualTo("admin");
     }
 
     @Test
