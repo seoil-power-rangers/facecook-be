@@ -1,10 +1,14 @@
 package com.facecook.profile.entity;
 
+import com.facecook.auth.entity.User;
 import com.facecook.profile.dto.CreateProfileRequest;
 import com.facecook.profile.dto.UpdateProfileRequest;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -21,6 +25,22 @@ public class Profile {
     @Id
     @Column(name = "user_id")
     private Long userId;
+
+    /**
+     * user_id 컬럼 하나를 두 번 매핑한다 — 위 userId(@Id, insert 담당)와
+     * 이 필드(읽기 전용, insertable/updatable=false)가 같은 컬럼을 가리킨다.
+     * @MapsId 대신 이 방식을 쓴 이유는 Profile.create()가 이미 Long userId만
+     * 받는 API라 호출부(회원가입 흐름)를 안 건드리기 위함이다.
+     *
+     * optional=false로 두면 Hibernate가 이 값이 항상 있다는 걸 알아서,
+     * 바이트코드 강화 없이도 지연 로딩 프록시를 만들 수 있다 — 조회 시점에
+     * User를 안 건드리면 실제 SELECT가 안 나간다. 목록처럼 여러 건을 한
+     * 번에 가져올 땐 ProfileRepository의 @EntityGraph로 미리 조인해서
+     * N+1을 피한다.
+     */
+    @OneToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", insertable = false, updatable = false)
+    private User user;
 
     @Column(nullable = false, length = 50)
     private String nickname;

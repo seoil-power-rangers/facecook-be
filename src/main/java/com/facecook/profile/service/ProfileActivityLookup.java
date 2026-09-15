@@ -1,7 +1,5 @@
 package com.facecook.profile.service;
 
-import com.facecook.auth.entity.User;
-import com.facecook.auth.repository.UserRepository;
 import com.facecook.config.ProfileActivityProperties;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
@@ -11,16 +9,16 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * Profile은 users.last_active_at을 모른다(별도 테이블) — ProfileResponse를
- * 만들 때마다 이 클래스가 그 값을 붙여 lastActiveAt·isActive를 채운다.
+ * Profile.getUser().getLastActiveAt()에서 lastActiveAt·isActive를 만든다.
  * 발급(profileApi 응답)과 판정 기준(활성 시간 임계값)이 여기 한 곳에만
  * 있어야, 화면마다 기준이 어긋나는 일이 없다.
+ *
+ * profile.getUser()는 지연 로딩 프록시라, 여러 건을 한 번에 다룰 땐
+ * ProfileRepository가 @EntityGraph로 미리 User를 조인해서 가져온
+ * Profile만 넘겨야 한다 — 안 그러면 건별로 조회가 나가 N+1이 된다.
  */
 @Component
 @RequiredArgsConstructor
@@ -28,35 +26,18 @@ public class ProfileActivityLookup {
 
     private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
 
-    private final UserRepository userRepository;
     private final ProfileActivityProperties properties;
     private final Clock clock;
 
     public ProfileResponse toResponse(Profile profile) {
-        LocalDateTime lastActiveAt = userRepository.findById(profile.getUserId())
-                .map(User::getLastActiveAt)
-                .orElse(null);
-        return build(profile, lastActiveAt);
+        return build(profile, profile.getUser().getLastActiveAt());
     }
 
     /** 입력 순서를 그대로 유지한다 — 호출부가 이미 정해둔 정렬(userId 오름차순 등)을 지킨다. */
     public List<ProfileResponse> toResponses(List<Profile> profiles) {
-        Map<Long, LocalDateTime> lastActiveByUserId = lastActiveByUserId(
-                profiles.stream().map(Profile::getUserId).toList()
-        );
         return profiles.stream()
-                .map(profile -> build(profile, lastActiveByUserId.get(profile.getUserId())))
+                .map(profile -> build(profile, profile.getUser().getLastActiveAt()))
                 .toList();
-    }
-
-    private Map<Long, LocalDateTime> lastActiveByUserId(Collection<Long> userIds) {
-        // lastActiveAt이 null일 수 있어(가입 직후 등) Collectors.toMap을 쓰지 않는다
-        // — 값이 null이면 NullPointerException을 던지는 게 그 API의 알려진 함정이다.
-        Map<Long, LocalDateTime> result = new HashMap<>();
-        for (User user : userRepository.findAllById(userIds)) {
-            result.put(user.getId(), user.getLastActiveAt());
-        }
-        return result;
     }
 
     private ProfileResponse build(Profile profile, LocalDateTime lastActiveAt) {
