@@ -31,6 +31,11 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
 
     public static final String CURRENT_USER_ATTRIBUTE = "currentUser";
 
+    public static Long currentUserId(HttpServletRequest request) {
+        Object currentUser = request.getAttribute(CURRENT_USER_ATTRIBUTE);
+        return currentUser instanceof AuthenticatedUser authenticatedUser ? authenticatedUser.userId() : null;
+    }
+
     private final SessionTokenSigner signer;
     private final SessionCookieService cookieService;
     private final UserRepository userRepository;

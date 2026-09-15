@@ -71,6 +71,9 @@ app:
   profile:
     activity:
       active-window-minutes: ${PROFILE_ACTIVE_WINDOW_MINUTES:15}
+  logging:
+    slow-request:
+      threshold-ms: ${SLOW_REQUEST_THRESHOLD_MS:500}
 
 server:
   port: 8080
