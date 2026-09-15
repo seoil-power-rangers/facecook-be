@@ -3,6 +3,7 @@ package com.facecook.profile.service;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.profile.dto.CreateProfileRequest;
+import com.facecook.profile.dto.DepartmentGroupResponse;
 import com.facecook.profile.dto.ProfileFiltersResponse;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.dto.ProfileStatsResponse;
@@ -63,6 +64,12 @@ public class ProfileService {
     @Transactional(readOnly = true)
     public List<ProfileResponse> getParticipantsExcept(Long userId) {
         return activityLookup.toResponses(profileRepository.findAllByUserIdNotOrderByUserIdAsc(userId));
+    }
+
+    public List<DepartmentGroupResponse> getDepartments() {
+        return DepartmentCatalog.groups().stream()
+                .map(group -> new DepartmentGroupResponse(group.college(), group.majors()))
+                .toList();
     }
 
     @Transactional(readOnly = true)

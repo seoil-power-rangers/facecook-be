@@ -112,6 +112,7 @@
 | GET | `/api/profiles/filters?active=` | 실제 참가자가 가진 학과·MBTI·취미 값(정렬됨). `active=true`면 활동 중인 참가자만 대상 | 참가자 |
 | GET | `/api/profiles/{userId}` | 특정 참가자 프로필 상세 | 참가자 |
 | GET | `/api/stats` | 참가자용 `{ total, activeNow }` — 등록된 프로필 수, 최근 15분 내 활동한 참가자 수 | 참가자 |
+| GET | `/api/departments` | 학과 정본을 학부별로 묶어서 반환 (`[{ college, majors[] }]`) | 참가자 |
 
 ### 프로필 응답의 활동 정보
 
@@ -127,11 +128,13 @@
 
 ### 학과(`department`) 값 검증
 
-`POST /api/profile`, `PATCH /api/profile`의 `department`는 정해진 30개
-(학부 7개, facecook-fe `ui/공통/constants.ts`의 `COLLEGES`와 동일) 중 하나만
-허용한다. 목록에 없는 값이면 `VALIDATION` 400을 반환한다. 자유 입력이던
-시절 가입자에게 남은 값은 그대로 유지되며(기존 데이터는 소급 검증하지 않음),
-새로 저장되는 값만 검증 대상이다.
+`POST /api/profile`, `PATCH /api/profile`의 `department`는 `GET /api/departments`가
+반환하는 학부 7개·학과 30개 목록 중 하나만 허용한다. 목록에 없는 값이면
+`VALIDATION` 400을 반환한다. 자유 입력이던 시절 가입자에게 남은 값은 그대로
+유지되며(기존 데이터는 소급 검증하지 않음), 새로 저장되는 값만 검증 대상이다.
+
+facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로 받아
+`DepartmentPicker`를 그린다 — BE의 `DepartmentCatalog`가 유일한 정본이다.
 
 ## 3. 콕찔러보기 / 매칭
 

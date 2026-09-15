@@ -3,6 +3,7 @@ package com.facecook.profile.controller;
 import com.facecook.common.session.AuthenticatedUser;
 import com.facecook.common.session.CurrentUser;
 import com.facecook.profile.dto.CreateProfileRequest;
+import com.facecook.profile.dto.DepartmentGroupResponse;
 import com.facecook.profile.dto.PhotoUploadUrlRequest;
 import com.facecook.profile.dto.PhotoUploadUrlResponse;
 import com.facecook.profile.dto.ProfileFiltersResponse;
@@ -92,5 +93,10 @@ public class ProfileController {
     @GetMapping("/stats")
     public ResponseEntity<ProfileStatsResponse> getStats(@CurrentUser AuthenticatedUser currentUser) {
         return ResponseEntity.ok(profileService.getStats());
+    }
+
+    @GetMapping("/departments")
+    public ResponseEntity<List<DepartmentGroupResponse>> getDepartments() {
+        return ResponseEntity.ok(profileService.getDepartments());
     }
 }

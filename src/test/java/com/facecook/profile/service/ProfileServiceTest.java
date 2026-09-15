@@ -170,6 +170,17 @@ class ProfileServiceTest {
     }
 
     @Test
+    void getsDepartmentGroupsCoveringAllThirtyMajors() {
+        var groups = profileService.getDepartments();
+
+        assertThat(groups).hasSize(7);
+        assertThat(groups.stream().flatMap(group -> group.majors().stream()).distinct().count())
+                .isEqualTo(30);
+        assertThat(groups.get(0).college()).isEqualTo("IT융합학부");
+        assertThat(groups.get(0).majors()).contains("소프트웨어공학과");
+    }
+
+    @Test
     void getsParticipantStats() {
         when(profileRepository.count()).thenReturn(120L);
         when(activityLookup.activeSince()).thenReturn(java.time.LocalDateTime.of(2026, 9, 30, 12, 0));
