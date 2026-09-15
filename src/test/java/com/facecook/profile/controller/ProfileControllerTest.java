@@ -232,6 +232,21 @@ class ProfileControllerTest {
     }
 
     @Test
+    void getsDepartmentGroups() throws Exception {
+        authenticateCurrentUser();
+        when(profileService.getDepartments()).thenReturn(List.of(
+                new com.facecook.profile.dto.DepartmentGroupResponse(
+                        "IT융합학부", List.of("소프트웨어공학과", "전기공학과")
+                )
+        ));
+
+        mockMvc.perform(get("/api/departments").cookie(validCookie()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].college").value("IT융합학부"))
+                .andExpect(jsonPath("$[0].majors[0]").value("소프트웨어공학과"));
+    }
+
+    @Test
     void issuesPhotoUploadUrlForCurrentUser() throws Exception {
         authenticateCurrentUser();
         when(profilePhotoUploadService.issueUploadUrl("image/jpeg"))
