@@ -29,6 +29,6 @@ public record AdminMissionProgressResponse(
                 .filter(assignment -> assignment.getStep() == step)
                 .map(assignment -> assignment.getTemplate().getContent())
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("STEP " + step + " 미션이 배정되지 않았습니다."));
+                .orElse(null);
     }
 }

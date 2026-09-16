@@ -5,21 +5,16 @@ import com.facecook.mission.entity.MatchMissionAssignment;
 import com.facecook.mission.entity.MissionTemplate;
 import com.facecook.mission.repository.MatchMissionAssignmentRepository;
 import com.facecook.mission.repository.MatchMissionRepository;
-import com.facecook.mission.repository.MissionTemplateRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,67 +22,85 @@ class MissionAssignmentServiceTest {
 
     private MatchMissionRepository matchRepository;
     private MatchMissionAssignmentRepository assignmentRepository;
-    private MissionTemplateRepository templateRepository;
+    private MissionAssignmentWriter assignmentWriter;
     private MissionAssignmentService service;
 
     @BeforeEach
     void setUp() {
         matchRepository = mock(MatchMissionRepository.class);
         assignmentRepository = mock(MatchMissionAssignmentRepository.class);
-        templateRepository = mock(MissionTemplateRepository.class);
-        service = new MissionAssignmentService(
-                matchRepository,
-                assignmentRepository,
-                templateRepository,
-                Clock.fixed(Instant.parse("2026-09-30T03:00:00Z"), ZoneOffset.UTC)
+        assignmentWriter = mock(MissionAssignmentWriter.class);
+        service = new MissionAssignmentService(matchRepository, assignmentRepository, assignmentWriter);
+    }
+
+    @Test
+    void returnsExistingAssignmentsWithoutLockWhenAllRequiredStepsExist() {
+        MatchMission mission = match(10L, 2);
+        List<MatchMissionAssignment> assignments = List.of(
+                assignment(10L, 3, "three"),
+                assignment(10L, 2, "two")
         );
-        when(matchRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(match(10L)));
-        when(assignmentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(assignmentRepository.findAllByMatchIdOrderByStep(10L)).thenReturn(assignments);
+        when(matchRepository.findById(10L)).thenReturn(Optional.of(mission));
+
+        var result = service.assignIfAbsent(10L);
+
+        assertThat(result).extracting(MatchMissionAssignment::getStep).containsExactly(2, 3);
+        verify(matchRepository, never()).findByIdForUpdate(10L);
+        verify(assignmentWriter, never()).assignWithLock(10L);
     }
 
     @Test
-    void assignsOneRandomTemplateForEveryStep() {
+    void delegatesToLockedWriterOnlyWhenRequiredAssignmentIsMissing() {
+        MatchMission mission = match(10L, 2);
+        List<MatchMissionAssignment> existing = List.of(assignment(10L, 2, "two"));
+        List<MatchMissionAssignment> completed = List.of(
+                assignment(10L, 2, "two"),
+                assignment(10L, 3, "three")
+        );
+        when(assignmentRepository.findAllByMatchIdOrderByStep(10L)).thenReturn(existing);
+        when(matchRepository.findById(10L)).thenReturn(Optional.of(mission));
+        when(assignmentWriter.assignWithLock(10L)).thenReturn(completed);
+
+        assertThat(service.assignIfAbsent(10L)).isEqualTo(completed);
+
+        verify(assignmentWriter).assignWithLock(10L);
+    }
+
+    @Test
+    void completedMatchNeedsNoHistoricalAssignments() {
+        MatchMission mission = match(10L, MatchMission.COMPLETED_STEP);
         when(assignmentRepository.findAllByMatchIdOrderByStep(10L)).thenReturn(List.of());
-        when(templateRepository.findAllByStep(1)).thenReturn(List.of(template(1, "one")));
-        when(templateRepository.findAllByStep(2)).thenReturn(List.of(template(2, "two")));
-        when(templateRepository.findAllByStep(3)).thenReturn(List.of(template(3, "three")));
+        when(matchRepository.findById(10L)).thenReturn(Optional.of(mission));
 
-        var assignments = service.assignIfAbsent(10L);
+        assertThat(service.assignIfAbsent(10L)).isEmpty();
 
-        assertThat(assignments).extracting(MatchMissionAssignment::getStep)
-                .containsExactly(1, 2, 3);
-        verify(assignmentRepository, times(3)).save(any());
-        verify(matchRepository).findByIdForUpdate(10L);
+        verify(assignmentWriter, never()).assignWithLock(10L);
     }
 
     @Test
-    void safelyBackfillsOnlyMissingStepsForExistingMatch() {
-        MatchMissionAssignment existing = assignment(10L, 1, template(1, "existing"));
-        when(assignmentRepository.findAllByMatchIdOrderByStep(10L)).thenReturn(List.of(existing));
-        when(templateRepository.findAllByStep(2)).thenReturn(List.of(template(2, "two")));
-        when(templateRepository.findAllByStep(3)).thenReturn(List.of(template(3, "three")));
+    void reusesAlreadyLockedMissionForCompletionFlow() {
+        MatchMission mission = match(10L, 1);
+        List<MatchMissionAssignment> assignments = List.of(assignment(10L, 1, "one"));
+        when(assignmentWriter.assignWithLockedMission(mission)).thenReturn(assignments);
 
-        var assignments = service.assignIfAbsent(10L);
+        assertThat(service.assignIfAbsent(mission)).isEqualTo(assignments);
 
-        assertThat(assignments).hasSize(3);
-        assertThat(assignments.getFirst()).isSameAs(existing);
-        verify(assignmentRepository, times(2)).save(any());
+        verify(assignmentWriter).assignWithLockedMission(mission);
+        verify(matchRepository, never()).findByIdForUpdate(10L);
     }
 
-    private static MatchMission match(Long id) {
+    private static MatchMission match(Long id, int currentStep) {
         MatchMission match = newInstance(MatchMission.class);
         setField(match, "matchId", id);
+        setField(match, "currentStep", currentStep);
         return match;
     }
 
-    private static MissionTemplate template(int step, String content) {
+    private static MatchMissionAssignment assignment(Long matchId, int step, String content) {
         MissionTemplate template = newInstance(MissionTemplate.class);
         setField(template, "step", step);
         setField(template, "content", content);
-        return template;
-    }
-
-    private static MatchMissionAssignment assignment(Long matchId, int step, MissionTemplate template) {
         MatchMissionAssignment assignment = newInstance(MatchMissionAssignment.class);
         setField(assignment, "matchId", matchId);
         setField(assignment, "step", step);

@@ -2,20 +2,16 @@ package com.facecook.mission.service;
 
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
+import com.facecook.mission.entity.MatchMission;
 import com.facecook.mission.entity.MatchMissionAssignment;
-import com.facecook.mission.entity.MissionTemplate;
 import com.facecook.mission.repository.MatchMissionAssignmentRepository;
 import com.facecook.mission.repository.MatchMissionRepository;
-import com.facecook.mission.repository.MissionTemplateRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Clock;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -26,43 +22,47 @@ public class MissionAssignmentService {
 
     private final MatchMissionRepository matchMissionRepository;
     private final MatchMissionAssignmentRepository assignmentRepository;
-    private final MissionTemplateRepository templateRepository;
-    private final Clock clock;
+    private final MissionAssignmentWriter assignmentWriter;
 
     /**
-     * match_info 행 잠금과 (match_id, step) UNIQUE 제약을 함께 사용해 신규/기존
-     * 매칭 모두 정확히 한 번만 세 STEP을 영구 배정한다.
+     * 필요한 배정이 이미 있으면 읽기만 하고 반환한다. 배정이 부족한 경우에만
+     * 별도 쓰기 트랜잭션에서 match_info 행을 잠그고 다시 확인한다.
      */
-    @Transactional
     public List<MatchMissionAssignment> assignIfAbsent(Long matchId) {
-        matchMissionRepository.findByIdForUpdate(matchId)
+        List<MatchMissionAssignment> assignments =
+                assignmentRepository.findAllByMatchIdOrderByStep(matchId);
+        MatchMission mission = matchMissionRepository.findById(matchId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "매칭을 찾을 수 없습니다."));
 
-        List<MatchMissionAssignment> assignments =
-                new ArrayList<>(assignmentRepository.findAllByMatchIdOrderByStep(matchId));
-        for (int step = FIRST_STEP; step <= LAST_STEP; step++) {
-            int targetStep = step;
-            if (assignments.stream().noneMatch(assignment -> assignment.getStep() == targetStep)) {
-                MissionTemplate template = randomTemplate(step);
-                assignments.add(assignmentRepository.save(
-                        MatchMissionAssignment.assign(
-                                matchId,
-                                step,
-                                template,
-                                LocalDateTime.now(clock)
-                        )
-                ));
-            }
+        if (hasAllRequiredAssignments(mission, assignments)) {
+            return sortedCopy(assignments);
         }
-        assignments.sort(java.util.Comparator.comparingInt(MatchMissionAssignment::getStep));
-        return List.copyOf(assignments);
+        return assignmentWriter.assignWithLock(matchId);
     }
 
-    private MissionTemplate randomTemplate(int step) {
-        List<MissionTemplate> templates = templateRepository.findAllByStep(step);
-        if (templates.isEmpty()) {
-            throw new IllegalStateException("STEP " + step + " 미션 템플릿이 없습니다.");
-        }
-        return templates.get(ThreadLocalRandom.current().nextInt(templates.size()));
+    /**
+     * 호출자가 이미 잠근 MatchMission을 재사용해 같은 행을 다시 조회하거나
+     * 잠그지 않는다. 쓰기 트랜잭션 안에서만 호출할 수 있다.
+     */
+    public List<MatchMissionAssignment> assignIfAbsent(MatchMission mission) {
+        return assignmentWriter.assignWithLockedMission(mission);
+    }
+
+    static boolean hasAllRequiredAssignments(
+            MatchMission mission,
+            List<MatchMissionAssignment> assignments
+    ) {
+        int firstRequiredStep = Math.max(FIRST_STEP, mission.getCurrentStep());
+        return IntStream.rangeClosed(firstRequiredStep, LAST_STEP)
+                .allMatch(step -> assignments.stream()
+                        .anyMatch(assignment -> assignment.getStep() == step));
+    }
+
+    private static List<MatchMissionAssignment> sortedCopy(
+            List<MatchMissionAssignment> assignments
+    ) {
+        return assignments.stream()
+                .sorted(Comparator.comparingInt(MatchMissionAssignment::getStep))
+                .toList();
     }
 }

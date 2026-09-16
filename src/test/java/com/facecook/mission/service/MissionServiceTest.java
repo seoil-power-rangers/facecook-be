@@ -2,6 +2,7 @@ package com.facecook.mission.service;
 
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
+import com.facecook.mission.dto.AdminMissionProgressResponse;
 import com.facecook.mission.entity.MatchMission;
 import com.facecook.mission.entity.MatchMissionAssignment;
 import com.facecook.mission.entity.MissionTemplate;
@@ -33,6 +34,7 @@ class MissionServiceTest {
 
     private MatchMissionRepository repository;
     private MissionAssignmentService assignmentService;
+    private MissionAuthorizationService authorizationService;
     private ApplicationEventPublisher eventPublisher;
     private MissionService missionService;
 
@@ -40,10 +42,12 @@ class MissionServiceTest {
     void setUp() {
         repository = mock(MatchMissionRepository.class);
         assignmentService = mock(MissionAssignmentService.class);
+        authorizationService = mock(MissionAuthorizationService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         missionService = new MissionService(
                 repository,
                 assignmentService,
+                authorizationService,
                 eventPublisher,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
@@ -52,7 +56,7 @@ class MissionServiceTest {
     @Test
     void participantCanReadOwnMatchProgress() {
         MatchMission mission = mission(10L, 1L, 2L, 2);
-        when(repository.findById(10L)).thenReturn(Optional.of(mission));
+        when(authorizationService.requireParticipant(10L, 2L)).thenReturn(mission);
         when(assignmentService.assignIfAbsent(10L)).thenReturn(assignments(10L));
 
         var response = missionService.getProgress(10L, 2L);
@@ -64,7 +68,8 @@ class MissionServiceTest {
 
     @Test
     void nonParticipantCannotReadMatchProgress() {
-        when(repository.findById(10L)).thenReturn(Optional.of(mission(10L, 1L, 2L, 1)));
+        when(authorizationService.requireParticipant(10L, 3L))
+                .thenThrow(new ApiException(ErrorCode.FORBIDDEN));
 
         assertThatThrownBy(() -> missionService.getProgress(10L, 3L))
                 .isInstanceOfSatisfying(ApiException.class,
@@ -74,7 +79,8 @@ class MissionServiceTest {
 
     @Test
     void missingMatchReturnsNotFound() {
-        when(repository.findById(99L)).thenReturn(Optional.empty());
+        when(authorizationService.requireParticipant(99L, 1L))
+                .thenThrow(new ApiException(ErrorCode.NOT_FOUND, "매칭을 찾을 수 없습니다."));
 
         assertThatThrownBy(() -> missionService.getProgress(99L, 1L))
                 .isInstanceOfSatisfying(ApiException.class,
@@ -85,7 +91,7 @@ class MissionServiceTest {
     void completesCurrentStepAndOpensNextStep() {
         MatchMission mission = mission(10L, 1L, 2L, 1);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
-        when(assignmentService.assignIfAbsent(10L)).thenReturn(assignments(10L));
+        when(assignmentService.assignIfAbsent(mission)).thenReturn(assignments(10L));
 
         var response = missionService.completeCurrentStep(10L, 7L);
 
@@ -102,7 +108,7 @@ class MissionServiceTest {
     void rejectsCompletingAnAlreadyCompletedMission() {
         MatchMission mission = mission(10L, 1L, 2L, 4);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
-        when(assignmentService.assignIfAbsent(10L)).thenReturn(assignments(10L));
+        when(assignmentService.assignIfAbsent(mission)).thenReturn(assignments(10L));
 
         assertThatThrownBy(() -> missionService.completeCurrentStep(10L, 7L))
                 .isInstanceOfSatisfying(ApiException.class, exception -> {
@@ -127,13 +133,28 @@ class MissionServiceTest {
     @Test
     void participantResponseNeverContainsFutureMissionContents() {
         MatchMission mission = mission(10L, 1L, 2L, 1);
-        when(repository.findById(10L)).thenReturn(Optional.of(mission));
+        when(authorizationService.requireParticipant(10L, 1L)).thenReturn(mission);
         when(assignmentService.assignIfAbsent(10L)).thenReturn(assignments(10L));
 
         var response = missionService.getProgress(10L, 1L);
 
         assertThat(response.currentMission()).isEqualTo("STEP 1 미션");
         assertThat(response.toString()).doesNotContain("STEP 2 미션", "STEP 3 미션");
+    }
+
+    @Test
+    void skipsBrokenMatchAndReturnsRemainingAdminProgress() {
+        MatchMission broken = mission(10L, 1L, 2L, 1);
+        MatchMission healthy = mission(20L, 3L, 4L, 1);
+        when(repository.findAll(org.mockito.ArgumentMatchers.any(Sort.class)))
+                .thenReturn(List.of(broken, healthy));
+        when(assignmentService.assignIfAbsent(10L))
+                .thenThrow(new IllegalStateException("템플릿 없음"));
+        when(assignmentService.assignIfAbsent(20L)).thenReturn(assignments(20L));
+
+        var responses = missionService.getAllProgress();
+
+        assertThat(responses).extracting(AdminMissionProgressResponse::matchId).containsExactly(20L);
     }
 
     private static MatchMission mission(Long matchId, Long userAId, Long userBId, int currentStep) {
