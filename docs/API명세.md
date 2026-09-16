@@ -16,7 +16,7 @@
 | POST | `/api/auth/verify-login` | 인증코드 확인 + 로그인 (기존 OTP 호환 경로) | 공개 |
 | POST | `/api/auth/admin-login` | 관리자 로그인 (`adminId, password`) | 공개 |
 | GET | `/api/auth/me` | 현재 세션 정보 조회 | 참가자/관리자/슈퍼 |
-| POST | `/api/auth/logout` | 로그아웃 | 참가자/관리자 |
+| POST | `/api/auth/logout` | 로그아웃 | 참가자/관리자/슈퍼 |
 
 ### 이메일 인증 요청/응답
 

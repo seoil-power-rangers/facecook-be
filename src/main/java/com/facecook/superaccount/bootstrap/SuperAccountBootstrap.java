@@ -1,6 +1,7 @@
 package com.facecook.superaccount.bootstrap;
 
 import com.facecook.auth.entity.User;
+import com.facecook.auth.entity.UserRole;
 import com.facecook.auth.repository.UserRepository;
 import com.facecook.auth.support.EmailAddress;
 import com.facecook.superaccount.config.SuperAccountProperties;
@@ -32,6 +33,15 @@ public class SuperAccountBootstrap implements ApplicationRunner {
 
         User existing = userRepository.findByEmail(login).orElse(null);
         if (existing != null) {
+            if (existing.getRole() != UserRole.SUPER) {
+                log.error("슈퍼 계정 로그인 아이디가 이미 다른 역할의 계정에서 사용 중입니다. role={}", existing.getRole());
+                return;
+            }
+            if (!passwordEncoder.matches(properties.password(), existing.getPasswordHash())) {
+                existing.setPassword(passwordEncoder.encode(properties.password()));
+                userRepository.save(existing);
+                log.info("슈퍼 계정 비밀번호를 갱신했습니다.");
+            }
             return;
         }
 
