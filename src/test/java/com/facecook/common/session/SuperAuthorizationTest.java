@@ -9,29 +9,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class AdminAuthorizationTest {
+class SuperAuthorizationTest {
 
     @Test
-    void allowsAdmin() {
-        var admin = new AuthenticatedUser(1L, "admin@example.com", UserRole.ADMIN);
+    void allowsSuper() {
+        var superUser = new AuthenticatedUser(1L, "rhgustjrwkwlxjf", UserRole.SUPER);
 
-        assertThatCode(() -> AdminAuthorization.requireAdmin(admin)).doesNotThrowAnyException();
+        assertThatCode(() -> SuperAuthorization.requireSuper(superUser)).doesNotThrowAnyException();
     }
 
     @Test
-    void rejectsParticipant() {
-        var participant = new AuthenticatedUser(2L, "user@example.com", UserRole.PARTICIPANT);
+    void rejectsAdmin() {
+        var admin = new AuthenticatedUser(2L, "admin@example.com", UserRole.ADMIN);
 
-        assertThatThrownBy(() -> AdminAuthorization.requireAdmin(participant))
+        assertThatThrownBy(() -> SuperAuthorization.requireSuper(admin))
                 .isInstanceOfSatisfying(ApiException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
     }
 
     @Test
-    void rejectsSuper() {
-        var superUser = new AuthenticatedUser(3L, "rhgustjrwkwlxjf", UserRole.SUPER);
+    void rejectsParticipant() {
+        var participant = new AuthenticatedUser(3L, "user@example.com", UserRole.PARTICIPANT);
 
-        assertThatThrownBy(() -> AdminAuthorization.requireAdmin(superUser))
+        assertThatThrownBy(() -> SuperAuthorization.requireSuper(participant))
                 .isInstanceOfSatisfying(ApiException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
     }

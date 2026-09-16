@@ -77,6 +77,17 @@ public class User {
         );
     }
 
+    public static User createSuper(String login, LocalDateTime createdAt) {
+        return new User(
+                login,
+                UserRole.SUPER,
+                UserStatus.ACTIVE,
+                null,
+                null,
+                createdAt
+        );
+    }
+
     public void suspend() {
         this.status = UserStatus.SUSPENDED;
     }

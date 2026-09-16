@@ -23,6 +23,8 @@ public interface MatchInfoRepository extends JpaRepository<MatchInfo, Long> {
 
     List<MatchInfo> findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(Long userAId, Long userBId);
 
+    List<MatchInfo> findAllByOrderByMatchedAtDesc();
+
     @Query(value = """
             select message.sender_id as senderId,
                    message.content as content,

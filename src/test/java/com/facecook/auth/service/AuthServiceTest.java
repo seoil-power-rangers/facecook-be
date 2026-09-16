@@ -177,6 +177,20 @@ class AuthServiceTest {
     }
 
     @Test
+    void logsInSuperWithPassword() {
+        User superUser = participantWithPassword("rhgustjrwkwlxjf", "dlwlalsqhwlxjf");
+        ReflectionTestUtils.setField(superUser, "role", UserRole.SUPER);
+        when(userRepository.findByEmail("rhgustjrwkwlxjf")).thenReturn(Optional.of(superUser));
+
+        AuthVerificationResponse response = authService.login(
+                new PasswordLoginRequest("rhgustjrwkwlxjf", "dlwlalsqhwlxjf")
+        );
+
+        assertThat(response.role()).isEqualTo("super");
+        assertThat(response.email()).isEqualTo("rhgustjrwkwlxjf");
+    }
+
+    @Test
     void rejectsPasswordLoginForUnknownEmail() {
         when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
 
