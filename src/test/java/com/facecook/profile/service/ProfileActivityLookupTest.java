@@ -1,6 +1,7 @@
 package com.facecook.profile.service;
 
 import com.facecook.auth.entity.User;
+import com.facecook.auth.repository.UserRepository;
 import com.facecook.config.ProfileActivityProperties;
 import com.facecook.profile.dto.CreateProfileRequest;
 import com.facecook.profile.dto.ProfileResponse;
@@ -13,8 +14,11 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ProfileActivityLookupTest {
 
@@ -22,8 +26,9 @@ class ProfileActivityLookupTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-09-30T12:00:00Z"), EVENT_ZONE);
     private static final LocalDateTime NOW = LocalDateTime.ofInstant(CLOCK.instant(), EVENT_ZONE);
 
+    private final UserRepository userRepository = mock(UserRepository.class);
     private final ProfileActivityLookup activityLookup =
-            new ProfileActivityLookup(new ProfileActivityProperties(15), CLOCK);
+            new ProfileActivityLookup(userRepository, new ProfileActivityProperties(15), CLOCK);
 
     @Test
     void marksActiveWhenLastActiveWithinWindow() {
@@ -52,6 +57,23 @@ class ProfileActivityLookupTest {
 
         assertThat(response.isActive()).isFalse();
         assertThat(response.lastActiveAt()).isNull();
+    }
+
+    @Test
+    void resolvesLastActiveAtWhenUserAssociationMissing() {
+        User user = User.createParticipant("signup@example.com", LocalDateTime.now());
+        ReflectionTestUtils.setField(user, "lastActiveAt", NOW.minusMinutes(5));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+
+        Profile profile = Profile.create(1L, new CreateProfileRequest(
+                "닉네임", "female", 21, "ENFP", "요리", "A",
+                null, null, null, null, null
+        ));
+
+        ProfileResponse response = activityLookup.toResponse(profile);
+
+        assertThat(response.isActive()).isTrue();
+        assertThat(response.lastActiveAt()).isEqualTo(NOW.minusMinutes(5));
     }
 
     @Test

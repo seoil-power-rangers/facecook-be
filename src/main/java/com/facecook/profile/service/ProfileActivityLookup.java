@@ -1,5 +1,7 @@
 package com.facecook.profile.service;
 
+import com.facecook.auth.entity.User;
+import com.facecook.auth.repository.UserRepository;
 import com.facecook.config.ProfileActivityProperties;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
@@ -19,6 +21,10 @@ import java.util.List;
  * profile.getUser()는 지연 로딩 프록시라, 여러 건을 한 번에 다룰 땐
  * ProfileRepository가 @EntityGraph로 미리 User를 조인해서 가져온
  * Profile만 넘겨야 한다 — 안 그러면 건별로 조회가 나가 N+1이 된다.
+ *
+ * 다만 saveAndFlush 직후처럼 영속성 컨텍스트에 user 없이 올라온 Profile은
+ * findById(EntityGraph)를 다시 호출해도 1차 캐시 때문에 user가 비어 있을 수
+ * 있다 — 이때는 userId로 users를 직접 조회한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -26,18 +32,29 @@ public class ProfileActivityLookup {
 
     private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
 
+    private final UserRepository userRepository;
     private final ProfileActivityProperties properties;
     private final Clock clock;
 
     public ProfileResponse toResponse(Profile profile) {
-        return build(profile, profile.getUser().getLastActiveAt());
+        return build(profile, resolveLastActiveAt(profile));
     }
 
     /** 입력 순서를 그대로 유지한다 — 호출부가 이미 정해둔 정렬(userId 오름차순 등)을 지킨다. */
     public List<ProfileResponse> toResponses(List<Profile> profiles) {
         return profiles.stream()
-                .map(profile -> build(profile, profile.getUser().getLastActiveAt()))
+                .map(profile -> build(profile, resolveLastActiveAt(profile)))
                 .toList();
+    }
+
+    private LocalDateTime resolveLastActiveAt(Profile profile) {
+        User user = profile.getUser();
+        if (user != null) {
+            return user.getLastActiveAt();
+        }
+        return userRepository.findById(profile.getUserId())
+                .map(User::getLastActiveAt)
+                .orElse(null);
     }
 
     private ProfileResponse build(Profile profile, LocalDateTime lastActiveAt) {
