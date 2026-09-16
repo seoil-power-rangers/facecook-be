@@ -51,11 +51,11 @@ public class Cook {
         return new Cook(senderId, receiverId, sentAt);
     }
 
+    /**
+     * 예전에는 보낸 지 1시간이 지나면 만료됐다. 지금은 시간 제한이 없다.
+     * 호출부는 그대로 두고, 맞콕하거나 취소하기 전까지는 pending을 유지한다.
+     */
     public boolean expireIfOverdue(LocalDateTime now) {
-        if (status == CookStatus.PENDING && !sentAt.plusHours(1).isAfter(now)) {
-            status = CookStatus.EXPIRED;
-            return true;
-        }
         return false;
     }
 

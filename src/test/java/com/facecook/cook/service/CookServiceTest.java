@@ -269,26 +269,37 @@ class CookServiceTest {
     }
 
     @Test
-    void reverseCookAtOneHourIsExpiredInsteadOfMatched() {
+    void reverseCookAfterOneHourStillMatches() {
         givenLockedUsers(1L, 2L);
         Cook reverse = cook(10L, 2L, 1L, EVENT_NOW.minusHours(1));
         when(cookRepository.findBySenderIdAndReceiverId(2L, 1L)).thenReturn(Optional.of(reverse));
-        when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> {
+            Cook saved = invocation.getArgument(0);
+            setField(saved, "id", 11L);
+            return saved;
+        });
+        when(matchInfoRepository.saveAndFlush(any(MatchInfo.class))).thenAnswer(invocation -> {
+            MatchInfo saved = invocation.getArgument(0);
+            setField(saved, "id", 20L);
+            return saved;
+        });
 
         var response = cookService.send(1L, new SendCookRequest(2L));
 
-        assertThat(response.matched()).isFalse();
-        assertThat(response.status()).isEqualTo("pending");
-        assertThat(reverse.getStatus()).isEqualTo(CookStatus.EXPIRED);
-        verify(matchInfoRepository, never()).saveAndFlush(any());
+        assertThat(response.matched()).isTrue();
+        assertThat(response.matchId()).isEqualTo(20L);
+        assertThat(response.status()).isEqualTo("matched");
+        assertThat(reverse.getStatus()).isEqualTo(CookStatus.MATCHED);
+        assertThat(reverse.getMatchId()).isEqualTo(20L);
+        verify(matchInfoRepository).saveAndFlush(any(MatchInfo.class));
     }
 
     @Test
-    void cookLookupLazilyExpiresOverduePendingCooksAndReturnsUsage() {
-        Cook expiredSent = cook(10L, 1L, 2L, EVENT_NOW.minusHours(2));
+    void cookLookupKeepsOldPendingCooksInsteadOfExpiringThem() {
+        Cook oldSent = cook(10L, 1L, 2L, EVENT_NOW.minusHours(2));
         Cook recentReceived = cook(11L, 3L, 1L, EVENT_NOW.minusMinutes(30));
         when(cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(1L, 1L))
-                .thenReturn(List.of(recentReceived, expiredSent));
+                .thenReturn(List.of(recentReceived, oldSent));
         when(profileRepository.findAllById(anyCollection()))
                 .thenReturn(List.of(profile(2L, "two"), profile(3L, "three")));
         when(cookRepository.countBySenderIdAndSentAtGreaterThanEqualAndSentAtLessThan(eq(1L), any(), any()))
@@ -297,12 +308,12 @@ class CookServiceTest {
 
         var response = cookService.getCooks(1L);
 
-        assertThat(expiredSent.getStatus()).isEqualTo(CookStatus.EXPIRED);
+        assertThat(oldSent.getStatus()).isEqualTo(CookStatus.PENDING);
         assertThat(recentReceived.getStatus()).isEqualTo(CookStatus.PENDING);
         assertThat(response.sent()).singleElement().satisfies(item -> {
             assertThat(item.userId()).isEqualTo(2L);
             assertThat(item.profile().nickname()).isEqualTo("two");
-            assertThat(item.status()).isEqualTo("expired");
+            assertThat(item.status()).isEqualTo("pending");
         });
         assertThat(response.received()).singleElement().satisfies(item ->
                 assertThat(item.userId()).isEqualTo(3L)
@@ -449,11 +460,22 @@ class CookServiceTest {
     @Test
     void cancelRejectsAlreadyExpiredCook() {
         Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusHours(2));
+        setField(cook, "status", CookStatus.EXPIRED);
         when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
 
         assertErrorCode(() -> cookService.cancel(1L, 10L), ErrorCode.ALREADY_EXPIRED);
 
         assertThat(cook.getStatus()).isEqualTo(CookStatus.EXPIRED);
+    }
+
+    @Test
+    void cancelAllowsOldPendingCookWithoutHourExpiry() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusHours(2));
+        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+
+        cookService.cancel(1L, 10L);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.CANCELLED);
     }
 
     @Test
