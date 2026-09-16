@@ -60,6 +60,8 @@ class ProfileServiceTest {
         when(profileRepository.existsById(1L)).thenReturn(false);
         when(profileRepository.saveAndFlush(any(Profile.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        when(profileRepository.findById(1L))
+                .thenAnswer(invocation -> Optional.of(profile(1L, "cook")));
 
         ProfileResponse response = profileService.create(1L, createRequest("cook"));
 
@@ -67,6 +69,7 @@ class ProfileServiceTest {
         assertThat(response.nickname()).isEqualTo("cook");
         assertThat(response.idealType()).isEqualTo("다정한 사람");
         verify(profileRepository).saveAndFlush(any(Profile.class));
+        verify(profileRepository).findById(1L);
     }
 
     @Test
