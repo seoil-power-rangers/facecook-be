@@ -2,7 +2,7 @@
 
 정리 기준일: 2026-09-16
 
-- 인증: 세션 쿠키(HttpOnly) 기반. `[참가자]` = 로그인한 참가자 세션 필요, `[관리자]` = 관리자 세션 필요, `[공개]` = 인증 불필요
+- 인증: 세션 쿠키(HttpOnly) 기반. `[참가자]` = 로그인한 참가자 세션 필요, `[관리자]` = 관리자 세션 필요, `[슈퍼]` = 총학생회 슈퍼 세션 필요, `[공개]` = 인증 불필요
 - 응답 포맷: JSON, 실패 시 `{ "code": "ERROR_CODE", "message": "..." }`
 - 정확한 필드 타입은 ERD 확정 후 갱신
 
@@ -12,10 +12,10 @@
 | --- | --- | --- | --- |
 | POST | `/api/auth/request-code` | 이메일 인증코드 발급 (`purpose: signup\|login`) | 공개 |
 | POST | `/api/auth/verify-signup` | 인증코드 확인 + 비밀번호 설정 + 회원가입 (`email, code, password, agreedTerms[]`) | 공개 |
-| POST | `/api/auth/login` | 참가자 이메일·비밀번호 로그인 | 공개 |
+| POST | `/api/auth/login` | 이메일(또는 슈퍼계정 아이디)·비밀번호 로그인 | 공개 |
 | POST | `/api/auth/verify-login` | 인증코드 확인 + 로그인 (기존 OTP 호환 경로) | 공개 |
 | POST | `/api/auth/admin-login` | 관리자 로그인 (`adminId, password`) | 공개 |
-| GET | `/api/auth/me` | 현재 세션 정보 조회 | 참가자/관리자 |
+| GET | `/api/auth/me` | 현재 세션 정보 조회 | 참가자/관리자/슈퍼 |
 | POST | `/api/auth/logout` | 로그아웃 | 참가자/관리자 |
 
 ### 이메일 인증 요청/응답
@@ -76,6 +76,7 @@
 - 이메일이 없거나 비밀번호가 틀리거나 기존 계정에 비밀번호가 설정되지 않은 경우 모두
   `INVALID_CREDENTIALS`를 반환한다.
 - 정지 계정은 `SUSPENDED`를 반환한다.
+- `email` 필드는 참가자/관리자 이메일뿐 아니라 슈퍼계정 아이디도 받는다.
 
 ### 기존 OTP 로그인 요청/응답
 
@@ -264,7 +265,59 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
   기준)와 일부러 다르다 — 여긴 운영 리포트용, 그쪽은 실시간에 가까운
   참가자 화면용이라 두 수치가 다르게 나오는 게 정상이다.
 
-## 8. 알림 (웹 푸시)
+## 8. 슈퍼 계정
+
+부스 관리자와 별개의 총학생회 계정이다. 기존 관리자 API는 쓰지 못하고,
+아래 조회만 가능하다.
+
+| Method | Path | 설명 | 인증 |
+| --- | --- | --- | --- |
+| GET | `/api/super/users` | 전체 사용자 목록 | 슈퍼 |
+| GET | `/api/super/chats` | 전체 채팅방 목록 | 슈퍼 |
+| GET | `/api/super/chats/{matchId}/messages` | 해당 채팅방 메시지 열람 (`before?`, `limit?`) | 슈퍼 |
+
+사용자 목록 항목:
+
+```json
+{
+  "userId": 1,
+  "email": "user@example.com",
+  "role": "participant",
+  "status": "active",
+  "createdAt": "2026-09-16T12:00:00",
+  "lastActiveAt": "2026-09-16T13:10:00",
+  "nickname": "지호",
+  "gender": "남성",
+  "age": 24,
+  "mbti": "ENFP",
+  "hobby": "카페",
+  "bloodType": "A형",
+  "department": "컴퓨터공학과",
+  "grade": "3학년",
+  "bio": "안녕",
+  "idealType": "다정한 사람",
+  "photo": null
+}
+```
+
+- 프로필이 없는 계정(관리자·슈퍼 등)은 닉네임·성별 같은 프로필 필드가 `null`이다.
+
+채팅방 목록 항목:
+
+```json
+{
+  "matchId": 42,
+  "matchedAt": "2026-09-16T12:00:00",
+  "userA": { "userId": 10, "email": "a@example.com", "nickname": "지호", "gender": "남성", "photo": null },
+  "userB": { "userId": 11, "email": "b@example.com", "nickname": "수아", "gender": "여성", "photo": null },
+  "lastMessage": "안녕",
+  "lastMessageAt": "2026-09-16T13:10:00"
+}
+```
+
+메시지 응답은 `GET /api/matches/{matchId}/messages`와 같다.
+
+## 9. 알림 (웹 푸시)
 
 | Method | Path | 설명 | 인증 |
 | --- | --- | --- | --- |
@@ -297,7 +350,7 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
 
 발송 전용 엔드포인트는 없음 — 콕/매칭/메시지 이벤트 발생 시 서버가 내부적으로 판단해 자동 발송(기능명세 8번 참고).
 
-## 9. 공통 에러 코드
+## 10. 공통 에러 코드
 
 | 코드 | 상황 |
 | --- | --- |
@@ -308,7 +361,7 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
 | `NOT_FOUND` | 대상 없음 |
 | `INVALID_CREDENTIALS` | 참가자 이메일 또는 비밀번호 불일치(비밀번호 미설정 기존 계정 포함) |
 
-## 10. 이번 문서 범위 밖
+## 11. 이번 문서 범위 밖
 
 - 정확한 필드 타입·nullable 여부는 ERD 확정 후 갱신
 - 레포 분리 후 실제 base URL(프론트→백엔드 호출 주소) 확정 필요

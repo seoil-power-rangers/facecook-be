@@ -131,7 +131,7 @@ erDiagram
 | user_id | BIGINT | PK, AUTO_INCREMENT | |
 | email | VARCHAR(255) | NOT NULL, UNIQUE | |
 | password_hash | VARCHAR(255) | NULL | BCrypt 해시. 기존 OTP 전용 계정 호환을 위해 DB는 NULL 허용, 신규 가입은 애플리케이션에서 필수 저장 |
-| role | VARCHAR(20) | NOT NULL, DEFAULT 'participant' | participant / admin |
+| role | VARCHAR(20) | NOT NULL, DEFAULT 'participant' | participant / admin / super |
 | status | VARCHAR(20) | NOT NULL, DEFAULT 'active' | active / suspended |
 | agreed_privacy_at | DATETIME | NULL | |
 | agreed_terms_at | DATETIME | NULL | |

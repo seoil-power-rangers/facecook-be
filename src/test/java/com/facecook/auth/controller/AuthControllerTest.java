@@ -196,6 +196,25 @@ class AuthControllerTest {
     }
 
     @Test
+    void passwordLoginAcceptsNonEmailIdentifier() throws Exception {
+        when(authService.login(any())).thenReturn(
+                new AuthVerificationResponse(9L, "rhgustjrwkwlxjf", "super")
+        );
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "email": "rhgustjrwkwlxjf",
+                                  "password": "dlwlalsqhwlxjf"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("super"))
+                .andExpect(jsonPath("$.email").value("rhgustjrwkwlxjf"));
+    }
+
+    @Test
     void meReturnsCurrentUserForValidSession() throws Exception {
         User user = User.createParticipant("user@example.com", NOW.atZone(ZoneOffset.UTC).toLocalDateTime());
         setId(user, 7L);
