@@ -57,8 +57,8 @@ app:
       public-key: ${VAPID_PUBLIC_KEY:}
       private-key: ${VAPID_PRIVATE_KEY:}
   super-account:
-    login: ${SUPER_ACCOUNT_LOGIN:rhgustjrwkwlxjf}
-    password: ${SUPER_ACCOUNT_PASSWORD:dlwlalsqhwlxjf}
+    login: ${SUPER_ACCOUNT_LOGIN:}
+    password: ${SUPER_ACCOUNT_PASSWORD:}
   admin:
     stats:
       # STATUS is the default until last_active_at is updated by user activity.

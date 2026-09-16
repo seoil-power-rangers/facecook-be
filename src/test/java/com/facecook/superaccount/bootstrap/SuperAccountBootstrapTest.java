@@ -29,6 +29,20 @@ class SuperAccountBootstrapTest {
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
 
     @Test
+    void doesNotCreateSuperAccountWhenCredentialsAreBlank() {
+        SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
+                new SuperAccountProperties("", ""),
+                userRepository,
+                passwordEncoder
+        );
+
+        bootstrap.run(null);
+
+        verify(userRepository, never()).findByEmail(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     void createsMissingSuperAccount() {
         when(userRepository.findByEmail("rhgustjrwkwlxjf")).thenReturn(Optional.empty());
         SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
@@ -48,7 +62,7 @@ class SuperAccountBootstrapTest {
     }
 
     @Test
-    void doesNotOverwriteExistingAccount() {
+    void updatesPasswordWhenExistingSuperPasswordDiffers() {
         User existing = User.createSuper("rhgustjrwkwlxjf", java.time.LocalDateTime.now());
         existing.setPassword("already-hashed");
         when(userRepository.findByEmail("rhgustjrwkwlxjf")).thenReturn(Optional.of(existing));
@@ -60,6 +74,42 @@ class SuperAccountBootstrapTest {
 
         bootstrap.run(null);
 
+        verify(userRepository).save(existing);
+        assertThat(passwordEncoder.matches("dlwlalsqhwlxjf", existing.getPasswordHash())).isTrue();
+    }
+
+    @Test
+    void doesNotSaveWhenExistingSuperPasswordMatches() {
+        User existing = User.createSuper("rhgustjrwkwlxjf", java.time.LocalDateTime.now());
+        existing.setPassword(passwordEncoder.encode("dlwlalsqhwlxjf"));
+        when(userRepository.findByEmail("rhgustjrwkwlxjf")).thenReturn(Optional.of(existing));
+        SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
+                new SuperAccountProperties("rhgustjrwkwlxjf", "dlwlalsqhwlxjf"),
+                userRepository,
+                passwordEncoder
+        );
+
+        bootstrap.run(null);
+
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void doesNotOverwriteExistingNonSuperAccount() {
+        User existing = User.createParticipant("rhgustjrwkwlxjf", java.time.LocalDateTime.now());
+        existing.setPassword(passwordEncoder.encode("participant-password"));
+        String originalPasswordHash = existing.getPasswordHash();
+        when(userRepository.findByEmail("rhgustjrwkwlxjf")).thenReturn(Optional.of(existing));
+        SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
+                new SuperAccountProperties("rhgustjrwkwlxjf", "dlwlalsqhwlxjf"),
+                userRepository,
+                passwordEncoder
+        );
+
+        bootstrap.run(null);
+
+        verify(userRepository, never()).save(any());
+        assertThat(existing.getRole()).isEqualTo(UserRole.PARTICIPANT);
+        assertThat(existing.getPasswordHash()).isEqualTo(originalPasswordHash);
     }
 }
