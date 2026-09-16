@@ -1,6 +1,6 @@
 # face 콕 — ERD (MySQL)
 
-정리 기준일: 2026-09-03
+정리 기준일: 2026-09-16
 
 ## 1. 설계 결정 사항
 
@@ -10,6 +10,7 @@
 | --- | --- | --- | --- |
 | `user_id` 타입 | UUID | **BIGINT AUTO_INCREMENT** | Supabase Auth 연동 전제로 UUID였는데, 이제 Auth 자체를 안 씀. Spring+JPA 기본 패턴과도 더 자연스러움 |
 | 미션 진행상황 | (검토) 별도 테이블 vs 합침 | **`match_info`에 합침** | STEP 1~3 고정이라 확장성보다 단순함 우선, 기존 검증된 방식 재사용 |
+| 랜덤 미션 배정 | 없음 | **템플릿과 매칭별 배정을 분리** | STEP별 후보를 관리하고 매칭마다 선택된 미션을 영구 고정 |
 | `report.reason` | "카테고리\n상세"로 한 컬럼에 합쳐 저장 | **`reason`/`detail` 컬럼 분리** | 새로 짜는 거라 굳이 문자열 합치기 안 해도 됨 |
 | 메시지 멱등성 | 없음 | **`message.client_message_id` 추가** | ACK 미수신 시 재전송해도 중복 저장 안 되게 |
 | 웹 푸시 | 없음 | **`push_subscription` 테이블 신설** | |
@@ -30,6 +31,8 @@ erDiagram
     users ||--o{ push_subscription : "구독"
     match_info ||--o{ cook : "성사된 콕"
     match_info ||--o{ message : "채팅"
+    match_info ||--o{ match_mission_assignment : "STEP별 배정"
+    mission_template ||--o{ match_mission_assignment : "선택된 템플릿"
 
     users {
         bigint user_id PK
@@ -70,6 +73,18 @@ erDiagram
         bigint step2_completed_by FK
         datetime step3_completed_at
         bigint step3_completed_by FK
+    }
+    mission_template {
+        bigint mission_template_id PK
+        int step
+        varchar content
+    }
+    match_mission_assignment {
+        bigint assignment_id PK
+        bigint match_id FK
+        int step
+        bigint mission_template_id FK
+        datetime assigned_at
     }
     cook {
         bigint cook_id PK
@@ -155,6 +170,23 @@ erDiagram
 | step2_completed_by | BIGINT | NULL, FK→users | |
 | step3_completed_at | DATETIME | NULL | |
 | step3_completed_by | BIGINT | NULL, FK→users | |
+
+### mission_template
+| 컬럼 | 타입 | 제약 | 설명 |
+| --- | --- | --- | --- |
+| mission_template_id | BIGINT | PK, AUTO_INCREMENT | |
+| step | INT | NOT NULL, CHECK 1~3, INDEX | 템플릿이 사용될 STEP |
+| content | VARCHAR(1000) | NOT NULL | 미션 내용 |
+
+### match_mission_assignment
+| 컬럼 | 타입 | 제약 | 설명 |
+| --- | --- | --- | --- |
+| assignment_id | BIGINT | PK, AUTO_INCREMENT | |
+| match_id | BIGINT | NOT NULL, FK→match_info, ON DELETE CASCADE | 배정 대상 매칭 |
+| step | INT | NOT NULL, CHECK 1~3 | 배정 STEP |
+| mission_template_id | BIGINT | NOT NULL, FK→mission_template, INDEX | 선택된 템플릿 |
+| assigned_at | DATETIME | NOT NULL, DEFAULT CURRENT_TIMESTAMP | 배정 시각 |
+| | | UNIQUE(match_id, step) | 매칭의 STEP마다 하나만 고정 배정 |
 
 ### cook
 | 컬럼 | 타입 | 제약 | 설명 |
@@ -310,6 +342,32 @@ CREATE TABLE push_subscription (
 `V2__add_password_hash_to_users.sql`은 기존 테스트 계정과의 호환성을 위해
 nullable인 `users.password_hash VARCHAR(255)`를 추가한다. 신규 회원가입은
 애플리케이션 레벨에서 8자 이상 비밀번호와 BCrypt 해시 저장을 강제한다.
+
+`V4__add_random_missions.sql`은 랜덤 미션 템플릿과 매칭별 고정 배정을 추가한다.
+테이블 정의는 다음과 같다(같은 마이그레이션의 STEP별 초기 템플릿 데이터는 생략).
+
+```sql
+CREATE TABLE mission_template (
+    mission_template_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    step                INT NOT NULL,
+    content             VARCHAR(1000) NOT NULL,
+    CONSTRAINT chk_mission_template_step CHECK (step BETWEEN 1 AND 3)
+);
+CREATE INDEX idx_mission_template_step ON mission_template (step);
+
+CREATE TABLE match_mission_assignment (
+    assignment_id       BIGINT AUTO_INCREMENT PRIMARY KEY,
+    match_id            BIGINT NOT NULL,
+    step                INT NOT NULL,
+    mission_template_id BIGINT NOT NULL,
+    assigned_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_match_mission_step UNIQUE (match_id, step),
+    CONSTRAINT chk_match_mission_step CHECK (step BETWEEN 1 AND 3),
+    CONSTRAINT fk_assignment_match FOREIGN KEY (match_id) REFERENCES match_info (match_id) ON DELETE CASCADE,
+    CONSTRAINT fk_assignment_template FOREIGN KEY (mission_template_id) REFERENCES mission_template (mission_template_id)
+);
+CREATE INDEX idx_assignment_template ON match_mission_assignment (mission_template_id);
+```
 
 ## 6. 이번 문서 범위 밖
 

@@ -1,6 +1,6 @@
 # face 콕 — API 명세
 
-정리 기준일: 2026-09-14
+정리 기준일: 2026-09-16
 
 - 인증: 세션 쿠키(HttpOnly) 기반. `[참가자]` = 로그인한 참가자 세션 필요, `[관리자]` = 관리자 세션 필요, `[공개]` = 인증 불필요
 - 응답 포맷: JSON, 실패 시 `{ "code": "ERROR_CODE", "message": "..." }`
@@ -178,9 +178,53 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
 
 | Method | Path | 설명 | 인증 |
 | --- | --- | --- | --- |
-| GET | `/api/matches/{matchId}/mission` | 미션 진행상황 조회 (`currentStep`, STEP별 완료시각) | 참가자(해당 매칭 당사자만) |
-| GET | `/api/admin/missions` | 전체 매칭의 미션 진행 현황 목록 | 관리자 |
+| GET | `/api/matches/{matchId}/mission` | 미션 진행상황 조회 (`currentStep`, `currentMission`, STEP별 완료시각) | 참가자(해당 매칭 당사자만) |
+| GET | `/api/admin/missions` | 전체 매칭의 미션 진행 현황 목록(STEP별 배정 미션 포함) | 관리자 |
 | POST | `/api/admin/missions/{matchId}/complete` | 현재 STEP 완료 처리 → 다음 STEP 공개 | 관리자 |
+
+참가자 미션 진행 응답(`GET /api/matches/{matchId}/mission` 및 미션 WebSocket 이벤트):
+
+```json
+{
+  "matchId": 42,
+  "currentStep": 2,
+  "currentMission": "둘이 거울셀카 찍어오기",
+  "step1CompletedAt": "2026-09-16T13:10:00",
+  "step2CompletedAt": null,
+  "step3CompletedAt": null
+}
+```
+
+- `currentMission`은 현재 STEP에 고정 배정된 미션 내용이다. 모든 STEP을 완료했거나
+  기능 배포 전에 이미 지나간 STEP이라 배정 데이터가 없으면 `null`이다.
+- `SUBSCRIBE /topic/mission/{matchId}`로 같은 형식의 진행 변경 이벤트를 받는다.
+  구독 시에도 해당 매칭 참가자인지 검증한다.
+
+관리자 응답(`GET /api/admin/missions`의 배열 항목 및 완료 처리 응답):
+
+```json
+{
+  "matchId": 42,
+  "userAId": 10,
+  "userBId": 11,
+  "matchedAt": "2026-09-16T12:00:00",
+  "currentStep": 2,
+  "step1Mission": "학과 부스 참여하고 스탬프 하나 같이 받아오기",
+  "step2Mission": "둘이 거울셀카 찍어오기",
+  "step3Mission": "축제 음식 한가지 함께 먹기",
+  "step1CompletedAt": "2026-09-16T13:10:00",
+  "step1CompletedBy": 1,
+  "step2CompletedAt": null,
+  "step2CompletedBy": null,
+  "step3CompletedAt": null,
+  "step3CompletedBy": null
+}
+```
+
+- `step1Mission`·`step2Mission`·`step3Mission`은 각 STEP에 고정 배정된 내용이다.
+  기능 배포 전에 이미 완료되어 실제 배정 기록이 없는 STEP은 `null`일 수 있다.
+- 관리자 목록은 한 매칭의 배정 데이터 처리에 실패해도 나머지 정상 매칭을 반환하며,
+  문제가 있는 매칭은 목록에서 제외하고 서버 로그에 남긴다.
 
 ## 6. 신고
 
