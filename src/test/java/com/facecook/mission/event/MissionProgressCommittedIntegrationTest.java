@@ -2,6 +2,7 @@ package com.facecook.mission.event;
 
 import com.facecook.mission.dto.MissionProgressResponse;
 import com.facecook.mission.redis.MissionEventPublisher;
+import com.facecook.config.AsyncConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -18,9 +19,10 @@ import javax.sql.DataSource;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
-@SpringJUnitConfig(MissionProgressCommittedIntegrationTest.Config.class)
+@SpringJUnitConfig({MissionProgressCommittedIntegrationTest.Config.class, AsyncConfig.class})
 class MissionProgressCommittedIntegrationTest {
 
     @Autowired
@@ -42,7 +44,7 @@ class MissionProgressCommittedIntegrationTest {
             verify(missionEventPublisher, never()).publish(progress);
         });
 
-        verify(missionEventPublisher).publish(progress);
+        verify(missionEventPublisher, timeout(1_000)).publish(progress);
     }
 
     @Configuration
