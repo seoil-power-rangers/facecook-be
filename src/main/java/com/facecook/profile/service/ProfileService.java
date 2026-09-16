@@ -36,11 +36,7 @@ public class ProfileService {
         requireValidDepartmentIfPresent(request.department());
 
         try {
-            Profile saved = profileRepository.saveAndFlush(Profile.create(userId, request));
-            // saveAndFlush 직후엔 user 연관이 비어 있다. toResponse()가
-            // profile.getUser()를 읽으므로 @EntityGraph(user)로 다시 조회한다.
-            Profile profile = profileRepository.findById(saved.getUserId())
-                    .orElseThrow(() -> new ApiException(ErrorCode.INTERNAL_ERROR));
+            Profile profile = profileRepository.saveAndFlush(Profile.create(userId, request));
             return activityLookup.toResponse(profile);
         } catch (DataIntegrityViolationException exception) {
             throw new ApiException(ErrorCode.PROFILE_ALREADY_EXISTS, exception);
