@@ -6,7 +6,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface MatchInfoRepository extends JpaRepository<MatchInfo, Long> {
 
@@ -25,14 +24,22 @@ public interface MatchInfoRepository extends JpaRepository<MatchInfo, Long> {
 
     List<MatchInfo> findAllByOrderByMatchedAtDesc();
 
+    /**
+     * 매칭마다 최근 메시지를 따로 조회하면 N+1이 난다 — match_id 목록을 한 번에
+     * 받아서 매칭별 최신 메시지 하나씩만 조인으로 골라온다.
+     */
     @Query(value = """
-            select message.sender_id as senderId,
-                   message.content as content,
-                   message.sent_at as sentAt
-            from message
-            where message.match_id = :matchId
-            order by message.sent_at desc, message.message_id desc
-            limit 1
+            select m.match_id as matchId,
+                   m.sender_id as senderId,
+                   m.content as content,
+                   m.sent_at as sentAt
+            from message m
+            inner join (
+                select match_id, max(message_id) as message_id
+                from message
+                where match_id in (:matchIds)
+                group by match_id
+            ) latest on latest.match_id = m.match_id and latest.message_id = m.message_id
             """, nativeQuery = true)
-    Optional<RecentMessageProjection> findRecentMessage(@Param("matchId") Long matchId);
+    List<RecentMessageProjection> findRecentMessagesByMatchIds(@Param("matchIds") List<Long> matchIds);
 }

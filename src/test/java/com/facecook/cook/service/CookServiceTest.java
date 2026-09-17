@@ -2,6 +2,7 @@ package com.facecook.cook.service;
 
 import com.facecook.auth.entity.User;
 import com.facecook.chat.repository.MessageRepository;
+import com.facecook.chat.repository.UnreadMessageProjection;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.cook.dto.SendCookRequest;
@@ -326,11 +327,11 @@ class CookServiceTest {
     @Test
     void listsMatchesWithPartnerProfileAndRecentMessage() {
         MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
-        RecentMessageProjection message = recentMessage(2L, "안녕하세요", EVENT_NOW.minusMinutes(1));
+        RecentMessageProjection message = recentMessage(20L, 2L, "안녕하세요", EVENT_NOW.minusMinutes(1));
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
         when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
-        when(matchInfoRepository.findRecentMessage(20L)).thenReturn(Optional.of(message));
+        when(matchInfoRepository.findRecentMessagesByMatchIds(List.of(20L))).thenReturn(List.of(message));
 
         var responses = cookService.getMatches(1L);
 
@@ -374,14 +375,17 @@ class CookServiceTest {
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
         when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
-        when(messageRepository.countByMatchIdAndSenderIdNot(20L, 1L)).thenReturn(3L);
+        when(messageRepository.findSentAtForUnreadCount(List.of(20L), 1L)).thenReturn(List.of(
+                unreadMessage(20L, EVENT_NOW.minusMinutes(3)),
+                unreadMessage(20L, EVENT_NOW.minusMinutes(2)),
+                unreadMessage(20L, EVENT_NOW.minusMinutes(1))
+        ));
 
         var responses = cookService.getMatches(1L);
 
         assertThat(responses).singleElement().satisfies(response ->
                 assertThat(response.unreadCount()).isEqualTo(3L)
         );
-        verify(messageRepository, never()).countByMatchIdAndSenderIdNotAndSentAtAfter(any(), any(), any());
     }
 
     @Test
@@ -392,14 +396,16 @@ class CookServiceTest {
         when(matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(1L, 1L))
                 .thenReturn(List.of(match));
         when(profileRepository.findAllById(List.of(2L))).thenReturn(List.of(profile(2L, "partner")));
-        when(messageRepository.countByMatchIdAndSenderIdNotAndSentAtAfter(20L, 1L, lastReadAt)).thenReturn(1L);
+        when(messageRepository.findSentAtForUnreadCount(List.of(20L), 1L)).thenReturn(List.of(
+                unreadMessage(20L, lastReadAt.minusMinutes(1)),
+                unreadMessage(20L, lastReadAt.plusMinutes(1))
+        ));
 
         var responses = cookService.getMatches(1L);
 
         assertThat(responses).singleElement().satisfies(response ->
                 assertThat(response.unreadCount()).isEqualTo(1L)
         );
-        verify(messageRepository, never()).countByMatchIdAndSenderIdNot(any(), any());
     }
 
     @Test
@@ -547,8 +553,13 @@ class CookServiceTest {
         ));
     }
 
-    private static RecentMessageProjection recentMessage(Long senderId, String content, LocalDateTime sentAt) {
+    private static RecentMessageProjection recentMessage(Long matchId, Long senderId, String content, LocalDateTime sentAt) {
         return new RecentMessageProjection() {
+            @Override
+            public Long getMatchId() {
+                return matchId;
+            }
+
             @Override
             public Long getSenderId() {
                 return senderId;
@@ -557,6 +568,20 @@ class CookServiceTest {
             @Override
             public String getContent() {
                 return content;
+            }
+
+            @Override
+            public LocalDateTime getSentAt() {
+                return sentAt;
+            }
+        };
+    }
+
+    private static UnreadMessageProjection unreadMessage(Long matchId, LocalDateTime sentAt) {
+        return new UnreadMessageProjection() {
+            @Override
+            public Long getMatchId() {
+                return matchId;
             }
 
             @Override
