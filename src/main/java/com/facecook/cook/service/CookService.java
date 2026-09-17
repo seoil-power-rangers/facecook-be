@@ -1,7 +1,7 @@
 package com.facecook.cook.service;
 
 import com.facecook.chat.repository.MessageRepository;
-import com.facecook.chat.repository.UnreadMessageProjection;
+import com.facecook.chat.repository.UnreadCountProjection;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.cook.dto.CookItemResponse;
@@ -33,7 +33,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -175,7 +174,7 @@ public class CookService {
                 matches.stream().map(matchInfo -> matchInfo.otherUserId(userId)).toList()
         );
         Map<Long, RecentMessageResponse> recentMessages = recentMessagesByMatchId(matchIds(matches));
-        Map<Long, Long> unreadCounts = unreadCountsByMatchId(matches, userId);
+        Map<Long, Long> unreadCounts = unreadCountsByMatchId(matchIds(matches), userId);
         return matches.stream()
                 .map(matchInfo -> toMatchResponse(matchInfo, userId, partnerProfiles, recentMessages, unreadCounts))
                 .toList();
@@ -189,13 +188,13 @@ public class CookService {
             throw new ApiException(ErrorCode.FORBIDDEN);
         }
         Long partnerId = matchInfo.otherUserId(userId);
-        List<MatchInfo> singleMatch = List.of(matchInfo);
+        List<Long> singleMatchId = List.of(matchInfo.getId());
         return toMatchResponse(
                 matchInfo,
                 userId,
                 profileResponses(List.of(partnerId)),
-                recentMessagesByMatchId(matchIds(singleMatch)),
-                unreadCountsByMatchId(singleMatch, userId)
+                recentMessagesByMatchId(singleMatchId),
+                unreadCountsByMatchId(singleMatchId, userId)
         );
     }
 
@@ -272,38 +271,16 @@ public class CookService {
     }
 
     /**
-     * 매칭마다 lastReadAt 기준이 달라서 쿼리 하나로 필터링까지 표현하기
-     * 어렵다 — 관련 메시지 시각만 한 번에 가져오고, 매칭별 기준 시각 비교는
-     * 메모리에서 처리한다(매칭당 쿼리 2개였던 걸 쿼리 1개로 줄인다).
+     * 매칭마다 안읽음 개수를 DB에서 직접 집계해온다(매칭당 쿼리 1개였던 걸
+     * 매칭 개수와 무관하게 쿼리 1개로 줄인다). lastReadAt 비교까지 쿼리 안에서
+     * 끝내기 때문에, 메시지가 아주 많이 쌓인 매칭이어도 개수만 돌아온다.
      */
-    private Map<Long, Long> unreadCountsByMatchId(List<MatchInfo> matches, Long userId) {
-        if (matches.isEmpty()) {
+    private Map<Long, Long> unreadCountsByMatchId(List<Long> matchIds, Long userId) {
+        if (matchIds.isEmpty()) {
             return Map.of();
         }
-        List<Long> matchIds = matchIds(matches);
-        // Collectors.toMap은 값이 null이면 내부 Map.merge에서 NPE를 던진다 —
-        // 안 읽은 매칭은 lastReadAt이 null이라 직접 채운다.
-        Map<Long, LocalDateTime> lastReadAtByMatchId = new HashMap<>();
-        for (MatchInfo matchInfo : matches) {
-            lastReadAtByMatchId.put(matchInfo.getId(), matchInfo.lastReadAt(userId));
-        }
-        Map<Long, List<LocalDateTime>> sentAtByMatchId = messageRepository
-                .findSentAtForUnreadCount(matchIds, userId).stream()
-                .collect(Collectors.groupingBy(
-                        UnreadMessageProjection::getMatchId,
-                        Collectors.mapping(UnreadMessageProjection::getSentAt, Collectors.toList())
-                ));
-
-        Map<Long, Long> counts = new HashMap<>();
-        for (Long matchId : matchIds) {
-            LocalDateTime lastReadAt = lastReadAtByMatchId.get(matchId);
-            List<LocalDateTime> sentTimes = sentAtByMatchId.getOrDefault(matchId, List.of());
-            long count = lastReadAt == null
-                    ? sentTimes.size()
-                    : sentTimes.stream().filter(sentAt -> sentAt.isAfter(lastReadAt)).count();
-            counts.put(matchId, count);
-        }
-        return counts;
+        return messageRepository.findUnreadCountsByMatchIds(matchIds, userId).stream()
+                .collect(Collectors.toMap(UnreadCountProjection::getMatchId, UnreadCountProjection::getUnreadCount));
     }
 
     @Transactional
