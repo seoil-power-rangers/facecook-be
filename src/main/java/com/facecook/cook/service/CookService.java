@@ -1,6 +1,7 @@
 package com.facecook.cook.service;
 
 import com.facecook.chat.repository.MessageRepository;
+import com.facecook.chat.repository.UnreadCountProjection;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.cook.dto.CookItemResponse;
@@ -16,6 +17,7 @@ import com.facecook.cook.entity.MatchInfo;
 import com.facecook.cook.repository.CookRepository;
 import com.facecook.cook.repository.CookUserRepository;
 import com.facecook.cook.repository.MatchInfoRepository;
+import com.facecook.cook.repository.RecentMessageProjection;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
@@ -166,12 +168,15 @@ public class CookService {
     @Transactional(readOnly = true)
     public List<MatchResponse> getMatches(Long userId) {
         List<MatchInfo> matches = matchInfoRepository.findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(userId, userId);
-        // 매칭마다 상대 프로필을 따로 조회하면 N+1이 난다 — 한 번에 배치 조회한다.
+        // 매칭마다 상대 프로필·최근 메시지·안읽음 개수를 따로 조회하면 N+1이 난다
+        // — 셋 다 한 번에 배치 조회한다.
         Map<Long, ProfileResponse> partnerProfiles = profileResponses(
                 matches.stream().map(matchInfo -> matchInfo.otherUserId(userId)).toList()
         );
+        Map<Long, RecentMessageResponse> recentMessages = recentMessagesByMatchId(matchIds(matches));
+        Map<Long, Long> unreadCounts = unreadCountsByMatchId(matchIds(matches), userId);
         return matches.stream()
-                .map(matchInfo -> toMatchResponse(matchInfo, userId, partnerProfiles))
+                .map(matchInfo -> toMatchResponse(matchInfo, userId, partnerProfiles, recentMessages, unreadCounts))
                 .toList();
     }
 
@@ -183,7 +188,14 @@ public class CookService {
             throw new ApiException(ErrorCode.FORBIDDEN);
         }
         Long partnerId = matchInfo.otherUserId(userId);
-        return toMatchResponse(matchInfo, userId, profileResponses(List.of(partnerId)));
+        List<Long> singleMatchId = List.of(matchInfo.getId());
+        return toMatchResponse(
+                matchInfo,
+                userId,
+                profileResponses(List.of(partnerId)),
+                recentMessagesByMatchId(singleMatchId),
+                unreadCountsByMatchId(singleMatchId, userId)
+        );
     }
 
     private void enforceEventWideDailyLimit(LocalDate today, DateRange range) {
@@ -228,21 +240,47 @@ public class CookService {
         return CookItemResponse.from(cook, userId, profiles.get(otherUserId));
     }
 
-    private MatchResponse toMatchResponse(MatchInfo matchInfo, Long userId, Map<Long, ProfileResponse> partnerProfiles) {
+    private MatchResponse toMatchResponse(
+            MatchInfo matchInfo,
+            Long userId,
+            Map<Long, ProfileResponse> partnerProfiles,
+            Map<Long, RecentMessageResponse> recentMessages,
+            Map<Long, Long> unreadCounts
+    ) {
         Long partnerId = matchInfo.otherUserId(userId);
         ProfileResponse partner = Optional.ofNullable(partnerProfiles.get(partnerId))
                 .orElseThrow(() -> new ApiException(ErrorCode.PROFILE_NOT_FOUND));
-        RecentMessageResponse recentMessage = matchInfoRepository.findRecentMessage(matchInfo.getId())
-                .map(RecentMessageResponse::from)
-                .orElse(null);
-        return MatchResponse.from(matchInfo, partner, recentMessage, unreadCount(matchInfo, userId));
+        return MatchResponse.from(
+                matchInfo,
+                partner,
+                recentMessages.get(matchInfo.getId()),
+                unreadCounts.getOrDefault(matchInfo.getId(), 0L)
+        );
     }
 
-    private long unreadCount(MatchInfo matchInfo, Long userId) {
-        LocalDateTime lastReadAt = matchInfo.lastReadAt(userId);
-        return lastReadAt == null
-                ? messageRepository.countByMatchIdAndSenderIdNot(matchInfo.getId(), userId)
-                : messageRepository.countByMatchIdAndSenderIdNotAndSentAtAfter(matchInfo.getId(), userId, lastReadAt);
+    private List<Long> matchIds(List<MatchInfo> matches) {
+        return matches.stream().map(MatchInfo::getId).toList();
+    }
+
+    private Map<Long, RecentMessageResponse> recentMessagesByMatchId(List<Long> matchIds) {
+        if (matchIds.isEmpty()) {
+            return Map.of();
+        }
+        return matchInfoRepository.findRecentMessagesByMatchIds(matchIds).stream()
+                .collect(Collectors.toMap(RecentMessageProjection::getMatchId, RecentMessageResponse::from));
+    }
+
+    /**
+     * 매칭마다 안읽음 개수를 DB에서 직접 집계해온다(매칭당 쿼리 1개였던 걸
+     * 매칭 개수와 무관하게 쿼리 1개로 줄인다). lastReadAt 비교까지 쿼리 안에서
+     * 끝내기 때문에, 메시지가 아주 많이 쌓인 매칭이어도 개수만 돌아온다.
+     */
+    private Map<Long, Long> unreadCountsByMatchId(List<Long> matchIds, Long userId) {
+        if (matchIds.isEmpty()) {
+            return Map.of();
+        }
+        return messageRepository.findUnreadCountsByMatchIds(matchIds, userId).stream()
+                .collect(Collectors.toMap(UnreadCountProjection::getMatchId, UnreadCountProjection::getUnreadCount));
     }
 
     @Transactional

@@ -10,6 +10,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
 @RestControllerAdvice
@@ -59,6 +60,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadableMessage() {
         return ResponseEntity.badRequest().body(ErrorResponse.from(ErrorCode.VALIDATION));
+    }
+
+    /**
+     * 존재하지 않는 정적 리소스 요청은 정상적인 404 상황이다 — 아래
+     * catch-all(Exception) 핸들러가 이걸 500으로 잡아버리면, 실제 장애가
+     * 아닌데도 ALB 5xx 알람이 울린다(부하테스트 중 실측으로 확인함).
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Void> handleNoResourceFound() {
+        return ResponseEntity.notFound().build();
     }
 
     @ExceptionHandler(Exception.class)

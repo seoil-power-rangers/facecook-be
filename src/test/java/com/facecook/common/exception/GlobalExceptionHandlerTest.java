@@ -39,4 +39,11 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(ErrorCode.ALREADY_MATCHED.getStatus());
         assertThat(response.getBody().code()).isEqualTo("ALREADY_MATCHED");
     }
+
+    @Test
+    void returnsNotFoundInsteadOf500ForMissingStaticResource() {
+        ResponseEntity<Void> response = handler.handleNoResourceFound();
+
+        assertThat(response.getStatusCode()).isEqualTo(org.springframework.http.HttpStatus.NOT_FOUND);
+    }
 }
