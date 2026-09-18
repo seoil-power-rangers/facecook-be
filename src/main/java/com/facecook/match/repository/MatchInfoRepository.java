@@ -1,6 +1,6 @@
-package com.facecook.cook.repository;
+package com.facecook.match.repository;
 
-import com.facecook.cook.entity.MatchInfo;
+import com.facecook.match.entity.MatchInfo;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

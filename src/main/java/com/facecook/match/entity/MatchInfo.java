@@ -1,4 +1,4 @@
-package com.facecook.cook.entity;
+package com.facecook.match.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

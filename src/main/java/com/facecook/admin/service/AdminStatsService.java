@@ -6,7 +6,7 @@ import com.facecook.admin.dto.AdminStatsResponse;
 import com.facecook.auth.entity.UserStatus;
 import com.facecook.auth.repository.UserRepository;
 import com.facecook.cook.repository.CookRepository;
-import com.facecook.cook.repository.MatchInfoRepository;
+import com.facecook.match.repository.MatchInfoRepository;
 import com.facecook.mission.entity.MatchMission;
 import com.facecook.mission.repository.MatchMissionRepository;
 import com.facecook.report.entity.ReportStatus;

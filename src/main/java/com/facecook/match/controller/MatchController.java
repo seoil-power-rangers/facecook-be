@@ -1,8 +1,8 @@
-package com.facecook.cook.controller;
+package com.facecook.match.controller;
 
 import com.facecook.common.session.AuthenticatedUser;
 import com.facecook.common.session.CurrentUser;
-import com.facecook.cook.dto.MatchResponse;
+import com.facecook.match.dto.MatchResponse;
 import com.facecook.cook.service.CookService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

@@ -7,7 +7,7 @@ import com.facecook.chat.entity.Message;
 import com.facecook.chat.repository.MessageRepository;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
-import com.facecook.cook.entity.MatchInfo;
+import com.facecook.match.entity.MatchInfo;
 import com.facecook.push.service.ParticipantPushNotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
