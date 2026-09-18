@@ -31,6 +31,18 @@ public class UserActivityService {
     private final UserRepository userRepository;
     private final Clock clock;
 
+    /**
+     * userId의 마지막 활동 시각을 지금으로 갱신한다.
+     *
+     * <p>전제조건: 없음(userId가 실제 존재하지 않아도 조용히 0행
+     * 갱신으로 끝난다 — 벌크 업데이트라 별도 조회·예외 없음).</p>
+     *
+     * <p>부작용: {@code users.last_active_at} 컬럼만 갱신한다(엔티티
+     * 전체 로드 없음). {@link #TOUCH_DEBOUNCE}(30초) 안에 이미 갱신됐으면
+     * 이번 호출은 쓰기 자체가 안 일어난다.</p>
+     *
+     * <p>예외 없음.</p>
+     */
     @Transactional
     public void touch(Long userId) {
         LocalDateTime now = now();

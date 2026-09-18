@@ -20,6 +20,13 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 
+/**
+ * 매칭방 채팅 메시지의 조회·전송.
+ *
+ * <p>전송은 클라이언트가 보낸 {@code clientMessageId}(UUID)로 멱등하게
+ * 처리한다 — 네트워크 재시도로 같은 요청이 두 번 와도 메시지가 두 번
+ * 저장되지 않는다({@link #send} 참고).</p>
+ */
 @Service
 @RequiredArgsConstructor
 public class ChatService {
@@ -32,6 +39,20 @@ public class ChatService {
     private final ChatOperatingHoursProperties operatingHoursProperties;
     private final Clock clock;
 
+    /**
+     * matchId 채팅방의 메시지를 id 역순(최신 먼저)으로 최대 limit개
+     * 조회한다. before가 있으면 그 메시지 id보다 오래된 것만(과거 페이지
+     * 넘기기용).
+     *
+     * <p>전제조건: matchId 존재, userId가 그 매칭의 당사자.</p>
+     *
+     * <p>부작용: 없음.</p>
+     *
+     * <p>예외: {@code NOT_FOUND}(매칭 없음), {@code FORBIDDEN}(당사자
+     * 아님).</p>
+     *
+     * @see #send(Long, Long, SendChatMessageRequest)
+     */
     public List<ChatMessageResponse> getHistory(Long userId, Long matchId, Long before, int limit) {
         authorizationService.requireParticipant(matchId, userId);
         PageRequest page = PageRequest.of(0, limit);
@@ -41,6 +62,28 @@ public class ChatService {
         return messages.stream().map(ChatMessageResponse::from).toList();
     }
 
+    /**
+     * senderId가 matchId 채팅방에 메시지를 보낸다.
+     * {@code request.clientMessageId()}가 이미 저장된 것과 같으면 새로
+     * 저장하지 않고 기존 메시지를 그대로 돌려준다(같은 요청이 재전송돼도
+     * 중복 저장 안 됨).
+     *
+     * <p>전제조건: 현재 시각이 채팅 운영시간 안(
+     * {@link ChatOperatingHoursProperties}), matchId 존재, senderId가
+     * 당사자.</p>
+     *
+     * <p>부작용: {@code result.created()}가 true일 때만 {@code Message}를
+     * 새로 저장하고 상대에게 chatMessageReceived 푸시를 보낸다. 동시에
+     * 같은 clientMessageId로 두 요청이 들어와도 DB UNIQUE 제약이 하나만
+     * 통과시키고, 진 쪽은 방금 저장된 걸 재조회해서 같은 결과로 수렴한다
+     * (메시지 유실·중복 없음).</p>
+     *
+     * <p>예외: {@code CLOSED}(운영시간 아님), {@code NOT_FOUND},
+     * {@code FORBIDDEN}, {@code VALIDATION}(clientMessageId가 다른
+     * 사람·다른 매칭 것과 충돌 — UUID 재사용 시도로 간주).</p>
+     *
+     * @see #getHistory(Long, Long, Long, int)
+     */
     public ChatSendResult send(Long senderId, Long matchId, SendChatMessageRequest request) {
         LocalDateTime now = now();
         ensureOperatingHours(now.toLocalTime());

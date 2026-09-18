@@ -14,6 +14,14 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 프로필 사진을 S3에 직접 업로드할 수 있는 presigned URL을 발급한다.
+ *
+ * <p>서버는 사진 파일 자체를 받지 않는다 — 클라이언트가 이 URL로 S3에
+ * 직접 PUT한다. 업로드된 사진이 실제로 프로필에 반영됐는지는 이 클래스
+ * 책임이 아니다({@link ProfileService#update} 쪽에서 그 URL이 우리
+ * 정책에 맞는 키인지만 검증한다, {@link ProfilePhotoUrlPolicy}).</p>
+ */
 @Service
 @RequiredArgsConstructor
 public class ProfilePhotoUploadService {
@@ -28,6 +36,18 @@ public class ProfilePhotoUploadService {
     private final S3Properties s3Properties;
     private final ProfilePhotoUrlPolicy photoUrlPolicy;
 
+    /**
+     * S3에 사진을 올릴 수 있는 presigned PUT URL과, 업로드 완료 후
+     * 프로필에 저장할 최종 사진 URL을 함께 발급한다.
+     *
+     * <p>전제조건: contentType이 jpeg/png/webp 중 하나.</p>
+     *
+     * <p>부작용: 없음 — S3에 실제로 아무것도 안 쓴다(서명만 만든다).
+     * 키는 매번 무작위 UUID로 만든다(유추 방지). URL은
+     * {@code s3Properties.presignTtlSeconds()} 후 만료된다.</p>
+     *
+     * <p>예외: {@code VALIDATION}(지원 안 하는 이미지 형식).</p>
+     */
     public PhotoUploadUrlResponse issueUploadUrl(String contentType) {
         String extension = ALLOWED_CONTENT_TYPES.get(contentType);
         if (extension == null) {
