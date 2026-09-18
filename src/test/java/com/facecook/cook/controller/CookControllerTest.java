@@ -17,6 +17,7 @@ import com.facecook.cook.dto.CookListResponse;
 import com.facecook.cook.dto.CookUsageResponse;
 import com.facecook.match.controller.MatchController;
 import com.facecook.match.dto.MatchResponse;
+import com.facecook.match.service.MatchService;
 import com.facecook.cook.dto.SendCookResponse;
 import com.facecook.cook.service.CookService;
 import jakarta.servlet.http.Cookie;
@@ -72,6 +73,9 @@ class CookControllerTest {
 
     @MockitoBean
     private CookService cookService;
+
+    @MockitoBean
+    private MatchService matchService;
 
     @MockitoBean
     private UserRepository userRepository;
@@ -156,8 +160,8 @@ class CookControllerTest {
                 null,
                 0
         );
-        when(cookService.getMatches(1L)).thenReturn(List.of(response));
-        when(cookService.getMatch(1L, 20L)).thenReturn(response);
+        when(matchService.getMatches(1L)).thenReturn(List.of(response));
+        when(matchService.getMatch(1L, 20L)).thenReturn(response);
 
         mockMvc.perform(get("/api/matches").cookie(validCookie(1L)))
                 .andExpect(status().isOk())
@@ -175,7 +179,7 @@ class CookControllerTest {
         mockMvc.perform(patch("/api/matches/20/read").cookie(validCookie(1L)))
                 .andExpect(status().isNoContent());
 
-        verify(cookService).markRead(1L, 20L);
+        verify(matchService).markRead(1L, 20L);
     }
 
     @Test
