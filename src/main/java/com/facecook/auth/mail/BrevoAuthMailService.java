@@ -10,6 +10,10 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
+/**
+ * Brevo(SMTP)를 통해 인증코드 메일을 보내는 {@link AuthMailService}
+ * 구현체.
+ */
 @Service
 @RequiredArgsConstructor
 public class BrevoAuthMailService implements AuthMailService {
@@ -17,6 +21,12 @@ public class BrevoAuthMailService implements AuthMailService {
     private final JavaMailSender mailSender;
     private final AuthMailProperties properties;
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>SMTP 전송 실패({@code MailException})는 {@code EMAIL_SEND_FAILED}
+     * {@code ApiException}으로 변환해서 던진다.</p>
+     */
     @Override
     public void sendVerificationCode(String email, String code, VerificationPurpose purpose) {
         SimpleMailMessage message = new SimpleMailMessage();

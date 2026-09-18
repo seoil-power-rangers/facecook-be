@@ -25,6 +25,18 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime;
 import java.util.Set;
 
+/**
+ * 회원가입·로그인. 로그인 경로가 두 가지고, 대상 역할 범위가 서로
+ * 다르다는 게 이 클래스에서 가장 헷갈리기 쉬운 지점이다.
+ *
+ * <ul>
+ * <li>이메일 인증코드 로그인({@link #requestCode}/{@link #verifyLogin})
+ * — {@code PARTICIPANT}만 가능({@link #findParticipant}가 role을
+ * 걸러낸다).</li>
+ * <li>비밀번호 로그인({@link #login}) — role 제한 없음. 참가자뿐 아니라
+ * 관리자·슈퍼 계정도 이 경로로 로그인한다.</li>
+ * </ul>
+ */
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -37,6 +49,25 @@ public class AuthService {
     private final VerificationCodeService verificationCodeService;
     private final PasswordEncoder passwordEncoder;
 
+    /**
+     * 이메일 인증코드를 발급하고 메일로 보낸다(회원가입 또는 로그인용,
+     * {@code request.purpose()}로 구분).
+     *
+     * <p>전제조건: SIGNUP이면 미가입 이메일, LOGIN이면 이미 가입된
+     * {@code PARTICIPANT}이고 정지 상태 아님(관리자·슈퍼 계정은 이 경로로
+     * 로그인 자체가 불가능 — {@link #login} 참고).</p>
+     *
+     * <p>부작용: Redis에 6자리 코드를 5분 TTL로 저장하고 실제 메일을
+     * 보낸다({@code VerificationCodeService#issue}). 30초 안에 재요청하면
+     * {@code RESEND_TOO_SOON}으로 막힌다.</p>
+     *
+     * <p>예외: {@code ALREADY_REGISTERED}(SIGNUP인데 이미 가입),
+     * {@code NOT_FOUND}(LOGIN인데 미가입), {@code SUSPENDED},
+     * {@code RESEND_TOO_SOON}.</p>
+     *
+     * @see #verifySignup(VerifySignupRequest)
+     * @see #verifyLogin(VerifyLoginRequest)
+     */
     public RequestCodeResponse requestCode(RequestCodeRequest request) {
         String email = EmailAddress.normalize(request.email());
         validateRequestEligibility(email, request.purpose());
@@ -47,6 +78,24 @@ public class AuthService {
         );
     }
 
+    /**
+     * 인증코드를 확인하고 참가자 계정을 생성한다(회원가입 완료).
+     *
+     * <p>전제조건: 필수 약관(service, privacy) 동의, 미가입 이메일,
+     * {@link #requestCode}로 발급된 유효한 코드.</p>
+     *
+     * <p>부작용: {@code User}(role=PARTICIPANT)를 저장한다. 인증코드
+     * 소비는 트랜잭션 커밋 이후로 미룬다({@link #consumeCodeAfterCommit})
+     * — 가입 저장이 롤백되면 코드는 안 타서 같은 코드로 재시도할 수
+     * 있다.</p>
+     *
+     * <p>예외: {@code TERMS_REQUIRED}, {@code ALREADY_REGISTERED}(동시
+     * 가입 시도 시 DB unique 제약 위반도 이 코드로 변환됨), 인증코드
+     * 불일치·만료 관련 예외({@code VerificationCodeService#verify}).</p>
+     *
+     * @see #requestCode(RequestCodeRequest)
+     * @see #login(PasswordLoginRequest)
+     */
     @Transactional
     public AuthVerificationResponse verifySignup(VerifySignupRequest request) {
         String email = EmailAddress.normalize(request.email());
@@ -70,6 +119,21 @@ public class AuthService {
         return AuthVerificationResponse.from(user);
     }
 
+    /**
+     * 인증코드로 로그인한다(비밀번호 불필요). {@code PARTICIPANT} 전용
+     * — 관리자·슈퍼 계정은 이 경로로 로그인할 수 없다.
+     *
+     * <p>전제조건: 가입된 PARTICIPANT, 정지 상태 아님, {@link
+     * #requestCode}로 발급된 유효한 코드.</p>
+     *
+     * <p>부작용: 인증코드를 소비한다(트랜잭션 커밋 후). 계정 자체는
+     * 바뀌지 않는다.</p>
+     *
+     * <p>예외: {@code NOT_FOUND}(미가입 또는 참가자가 아님),
+     * {@code SUSPENDED}.</p>
+     *
+     * @see #login(PasswordLoginRequest)
+     */
     @Transactional(readOnly = true)
     public AuthVerificationResponse verifyLogin(VerifyLoginRequest request) {
         String email = EmailAddress.normalize(request.email());
@@ -81,6 +145,23 @@ public class AuthService {
         return AuthVerificationResponse.from(user);
     }
 
+    /**
+     * 이메일+비밀번호로 로그인한다. role 제한이 없다 — 참가자·관리자·슈퍼
+     * 계정 전부 이 API 하나로 로그인한다.
+     *
+     * <p>전제조건: 가입된 계정, 비밀번호 일치, 정지 상태 아님.</p>
+     *
+     * <p>부작용: 없음(순수 인증). 타이밍 공격 방지를 위해 이메일이
+     * 존재하지 않거나 비밀번호 해시가 없는 경우에도 더미 해시({@link
+     * #DUMMY_PASSWORD_HASH})로 {@code passwordEncoder.matches}를 한 번
+     * 실행한다 — "이메일이 없어서 실패"와 "비밀번호가 틀려서 실패"의
+     * 응답 시간 차이로 가입 여부가 유추되는 걸 막는다.</p>
+     *
+     * <p>예외: {@code INVALID_CREDENTIALS}(이메일 없음·비밀번호 불일치를
+     * 구분 없이 같은 코드로 반환), {@code SUSPENDED}.</p>
+     *
+     * @see #verifyLogin(VerifyLoginRequest)
+     */
     @Transactional(readOnly = true)
     public AuthVerificationResponse login(PasswordLoginRequest request) {
         String email = EmailAddress.normalize(request.email());
