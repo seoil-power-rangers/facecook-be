@@ -1,6 +1,6 @@
-package com.facecook.cook.dto;
+package com.facecook.match.dto;
 
-import com.facecook.cook.entity.MatchInfo;
+import com.facecook.match.entity.MatchInfo;
 import com.facecook.profile.dto.ProfileResponse;
 
 import java.time.LocalDateTime;

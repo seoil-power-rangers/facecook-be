@@ -2,8 +2,8 @@ package com.facecook.chat.service;
 
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
-import com.facecook.cook.entity.MatchInfo;
-import com.facecook.cook.repository.MatchInfoRepository;
+import com.facecook.match.entity.MatchInfo;
+import com.facecook.match.repository.MatchInfoRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

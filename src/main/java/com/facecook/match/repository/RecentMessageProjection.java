@@ -1,4 +1,4 @@
-package com.facecook.cook.repository;
+package com.facecook.match.repository;
 
 import java.time.LocalDateTime;
 
