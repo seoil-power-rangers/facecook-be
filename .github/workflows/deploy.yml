@@ -8,6 +8,13 @@ permissions:
   id-token: write
   contents: read
 
+# 배포는 한 번에 하나만 실행한다. 두 실행이 겹치면 서로 다른 서버에 서로 다른 버전이 섞이거나, 늦게 끝난
+# 이전 커밋의 배포가 새 커밋을 덮어쓸 수 있다. 진행 중인 배포는 서버를 교체하는 도중일 수 있어서
+# 취소하지 않고 끝까지 기다린다(대기 중인 실행은 GitHub가 가장 최근 것 하나만 남긴다).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   # 같은 커밋의 테스트가 통과해야만 이미지를 빌드·배포한다.
   test:
@@ -18,6 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.vars.outputs.sha_short }}
+      # 배포는 태그가 아니라 이 digest로 이미지를 가리킨다. 태그(:latest 등)는 나중에 다른 이미지를
+      # 가리키도록 바뀔 수 있지만 digest는 이 빌드의 이미지 하나만 가리킨다.
+      image_digest: ${{ steps.build_image.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,6 +63,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push image (arm64)
+        id: build_image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -65,6 +76,8 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    env:
+      IMAGE_DIGEST: ${{ needs.build-and-push.outputs.image_digest }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -87,7 +100,11 @@ jobs:
           ARN=$(aws elbv2 describe-target-groups --names facecook-tg --query 'TargetGroups[0].TargetGroupArn' --output text)
           echo "arn=$ARN" >> "$GITHUB_OUTPUT"
 
-      # 서버1 배포 → 헬스체크 통과 확인 → 서버2 배포 (순차 롤링, §2 확정 설계).
+      # 서버1 배포 → 새 컨테이너 확인 → 헬스체크 통과 확인 → 서버2 배포 (순차 롤링, §2 확정 설계).
+      #
+      # 두 서버 모두 이 실행이 빌드한 이미지를 digest로 지정해 받는다(:latest를 쓰지 않는다). 서버마다
+      # 새 컨테이너가 방금 배포한 이미지로 떴고 애플리케이션이 실제로 UP인지 서버 안에서 직접 확인한 뒤에야
+      # 다음 서버로 넘어간다. ALB의 healthy 값은 이전 컨테이너가 남긴 판정일 수 있어서 그것만 믿지 않는다.
       - name: Sequential rolling deploy via SSM
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
@@ -95,18 +112,31 @@ jobs:
           TG_ARN: ${{ steps.tg.outputs.arn }}
         run: |
           set -e
+          if [ -z "$IMAGE_DIGEST" ]; then
+            echo "::error::빌드한 이미지의 digest를 받지 못했다. 배포하지 않는다."
+            exit 1
+          fi
+          IMAGE="$ECR_REPOSITORY@$IMAGE_DIGEST"
+          echo "배포 이미지: $IMAGE"
+
           for ID in ${{ steps.instances.outputs.ids }}; do
             echo "=== Deploying to $ID ==="
 
             REFRESH_ENV='ENV_JSON=$(aws secretsmanager get-secret-value --region '"$AWS_REGION"' --secret-id facecook/app-env --query SecretString --output text); echo "$ENV_JSON" | python3 -c "import json,sys; [print(f'"'"'{k}={v}'"'"') for k,v in json.load(sys.stdin).items()]" > /opt/facecook/app.env'
 
-            COMMANDS_JSON=$(jq -n --arg ecr "$ECR_REPOSITORY" --arg region "$AWS_REGION" --arg refresh_env "$REFRESH_ENV" '{
+            # 마지막 세 줄이 서버 안 확인이다: 실행 중인 컨테이너가 방금 배포한 이미지에서 만들어졌는지,
+            # 프로세스가 떠 있는지, 애플리케이션이 UP을 응답할 때까지(최대 약 3분) 기다린다. 하나라도
+            # 어긋나면 명령이 실패해서 아래에서 다음 서버로 넘어가지 않는다.
+            COMMANDS_JSON=$(jq -n --arg ecr "$ECR_REPOSITORY" --arg region "$AWS_REGION" --arg refresh_env "$REFRESH_ENV" --arg image "$IMAGE" '{
               commands: [
                 $refresh_env,
                 "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($ecr)",
-                "docker pull \($ecr):latest",
+                "docker pull \($image)",
                 "docker rm -f facecook-app || true",
-                "docker run -d --name facecook-app --restart unless-stopped --env-file /opt/facecook/app.env -p 8080:8080 \($ecr):latest"
+                "docker run -d --name facecook-app --restart unless-stopped --env-file /opt/facecook/app.env -p 8080:8080 \($image)",
+                "if [ \"$(docker inspect -f \"{{.Config.Image}}\" facecook-app)\" != \"\($image)\" ]; then echo \"실행 중인 컨테이너가 배포한 이미지가 아니다\" >&2; exit 1; fi",
+                "echo \"container started at $(docker inspect -f \"{{.State.StartedAt}}\" facecook-app), image \($image)\"",
+                "for i in $(seq 1 60); do if [ \"$(docker inspect -f \"{{.State.Running}}\" facecook-app)\" = true ] && curl -fsS http://localhost:8080/actuator/health | grep -q \"\\\"status\\\":\\\"UP\\\"\"; then echo \"app UP\"; break; fi; if [ \"$i\" = 60 ]; then echo \"새 컨테이너가 3분 안에 UP이 되지 않았다\" >&2; docker logs --tail 50 facecook-app >&2; exit 1; fi; sleep 3; done"
               ]
             }')
 
@@ -116,9 +146,18 @@ jobs:
               --parameters "$COMMANDS_JSON" \
               --query 'Command.CommandId' --output text)
 
-            aws ssm wait command-executed --command-id "$CMD_ID" --instance-id "$ID"
-
-            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$ID" --query 'Status' --output text)
+            # `aws ssm wait command-executed`는 약 100초만 기다리고 실패해서, 이미지 pull과 최대 3분의
+            # 기동 확인을 포함한 이 명령에는 짧다. 끝날 때까지(최대 10분) 직접 확인한다. 명령을 보낸 직후에는
+            # 조회가 잠깐 실패할 수 있어 그동안은 대기 중으로 본다.
+            STATUS=Pending
+            for i in $(seq 1 120); do
+              STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$ID" --query 'Status' --output text 2>/dev/null || echo Pending)
+              case "$STATUS" in
+                Pending|InProgress|Delayed) sleep 5 ;;
+                *) break ;;
+              esac
+            done
+            aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$ID" --query 'StandardOutputContent' --output text
             if [ "$STATUS" != "Success" ]; then
               echo "::error::$ID 배포 명령 실패 (status=$STATUS)"
               aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$ID" --query 'StandardErrorContent' --output text
@@ -140,5 +179,5 @@ jobs:
               exit 1
             fi
 
-            echo "=== $ID 정상 배포 완료 ==="
+            echo "=== $ID 정상 배포 완료 ($IMAGE) ==="
           done
