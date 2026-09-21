@@ -13,6 +13,7 @@ import com.facecook.common.session.SessionCookieService;
 import com.facecook.common.session.SessionProperties;
 import com.facecook.common.session.SessionTokenSigner;
 import com.facecook.config.WebConfig;
+import com.facecook.cook.config.CookProperties;
 import com.facecook.cook.dto.CookListResponse;
 import com.facecook.cook.dto.CookUsageResponse;
 import com.facecook.cook.dto.SendCookResponse;
@@ -38,6 +39,7 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -69,6 +71,9 @@ class CookControllerTest {
 
     @MockitoBean
     private CookService cookService;
+
+    @MockitoBean
+    private CookProperties cookProperties;
 
     @MockitoBean
     private UserRepository userRepository;
@@ -161,6 +166,81 @@ class CookControllerTest {
         mockMvc.perform(delete("/api/cooks/10").cookie(validCookie(1L)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void rejectsReceivedCookWhenEnabledAndContractHeaderPresent() throws Exception {
+        givenAuthenticatedUser(2L);
+        when(cookProperties.rejectEnabled()).thenReturn(true);
+
+        mockMvc.perform(post("/api/cooks/10/reject")
+                        .cookie(validCookie(2L))
+                        .header(CookController.REJECT_CONTRACT_HEADER, CookController.REJECT_CONTRACT_VERSION))
+                .andExpect(status().isNoContent());
+
+        verify(cookService).reject(2L, 10L);
+    }
+
+    @Test
+    void rejectApiActsAsMissingWhenFlagIsOff() throws Exception {
+        givenAuthenticatedUser(2L);
+        when(cookProperties.rejectEnabled()).thenReturn(false);
+
+        mockMvc.perform(post("/api/cooks/10/reject")
+                        .cookie(validCookie(2L))
+                        .header(CookController.REJECT_CONTRACT_HEADER, CookController.REJECT_CONTRACT_VERSION))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+
+        verify(cookService, never()).reject(any(), any());
+    }
+
+    @Test
+    void rejectApiActsAsMissingWhenContractHeaderIsAbsent() throws Exception {
+        givenAuthenticatedUser(2L);
+        when(cookProperties.rejectEnabled()).thenReturn(true);
+
+        mockMvc.perform(post("/api/cooks/10/reject").cookie(validCookie(2L)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+
+        verify(cookService, never()).reject(any(), any());
+    }
+
+    @Test
+    void rejectApiActsAsMissingWhenContractVersionIsUnknown() throws Exception {
+        givenAuthenticatedUser(2L);
+        when(cookProperties.rejectEnabled()).thenReturn(true);
+
+        mockMvc.perform(post("/api/cooks/10/reject")
+                        .cookie(validCookie(2L))
+                        .header(CookController.REJECT_CONTRACT_HEADER, "2"))
+                .andExpect(status().isNotFound());
+
+        verify(cookService, never()).reject(any(), any());
+    }
+
+    @Test
+    void rejectApiReportsAlreadyMatchedCook() throws Exception {
+        givenAuthenticatedUser(2L);
+        when(cookProperties.rejectEnabled()).thenReturn(true);
+        doThrow(new ApiException(ErrorCode.ALREADY_MATCHED)).when(cookService).reject(2L, 10L);
+
+        mockMvc.perform(post("/api/cooks/10/reject")
+                        .cookie(validCookie(2L))
+                        .header(CookController.REJECT_CONTRACT_HEADER, CookController.REJECT_CONTRACT_VERSION))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ALREADY_MATCHED"));
+    }
+
+    @Test
+    void rejectApiRequiresSession() throws Exception {
+        when(cookProperties.rejectEnabled()).thenReturn(true);
+
+        mockMvc.perform(post("/api/cooks/10/reject")
+                        .header(CookController.REJECT_CONTRACT_HEADER, CookController.REJECT_CONTRACT_VERSION))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 
     @Test

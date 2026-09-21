@@ -143,10 +143,32 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
 | --- | --- | --- | --- |
 | POST | `/api/cooks` | 콕 보내기 (`receiverId`) → 응답에 매칭 성사 여부 포함 | 참가자 |
 | GET | `/api/cooks` | 보낸/받은 콕 목록 + 오늘/전체 사용량 통계 | 참가자 |
+| DELETE | `/api/cooks/{cookId}` | 내가 보낸 콕 취소 (204) | 참가자 |
+| POST | `/api/cooks/{cookId}/reject` | 내가 받은 콕 거절 (204, 본문 없음) | 참가자 |
 | GET | `/api/matches` | 내 매칭 목록 (상대 프로필 + 최근 메시지 미리보기) | 참가자 |
 | GET | `/api/matches/{matchId}` | 매칭 상세 | 참가자 |
 
-**콕 보내기 실패 코드**: `SELF`(자기자신), `NOT_FOUND`(대상없음), `ALREADY_MATCHED`, `DUPLICATE`, `DAILY_LIMIT`, `EVENT_LIMIT`
+**콕 보내기 실패 코드**: `SELF`(자기자신), `NOT_FOUND`(대상없음), `ALREADY_MATCHED`, `ALREADY_REJECTED`(내가 이미 거절한 상대), `DUPLICATE`, `DAILY_LIMIT`, `EVENT_LIMIT`
+
+검사 순서는 자기자신 → 상대 존재 → 이미 매칭 → 이미 거절한 상대 → 중복 → 개인 한도 → 행사 전체 한도이다.
+상대가 나에게 보낸 콕이 취소됐거나 만료된 상태라면 맞콕으로 취급하지 않고 새 콕(pending)으로 저장된다.
+
+### 콕 취소 (`DELETE /api/cooks/{cookId}`)
+
+- 보낸 사람만 할 수 있다. 실패 코드: `NOT_FOUND`, `FORBIDDEN`(내가 보낸 콕이 아님), `ALREADY_MATCHED`, `ALREADY_EXPIRED`(레거시 만료 콕), `ALREADY_REJECTED`(상대가 거절한 콕 — 취소로 거절 상태를 덮어쓸 수 없다).
+- 이미 취소한 콕을 다시 취소해도 204이다. 취소해도 오늘 사용 횟수는 돌아오지 않는다.
+
+### 콕 거절 (`POST /api/cooks/{cookId}/reject`)
+
+- 받은 사람만 할 수 있고, 성공하면 204(본문 없음)이다. 푸시를 보내지 않고 보낸 사람의 사용 횟수도 돌려주지 않는다.
+- 요청 헤더 `X-Cook-Reject-Contract: 1`이 필요하다. 이 헤더가 없거나 서버의 거절 기능이 꺼져 있으면(환경변수 `COOK_REJECT_ENABLED`, 기본 꺼짐) 콕 상태·호출자와 무관하게 `NOT_FOUND`로 응답하고 아무것도 기록하지 않는다. 헤더 없는 요청은 서버 거절이 기록된다는 것을 모르는 이전 화면의 요청으로 본다.
+- 켜져 있고 헤더가 있을 때의 검사 순서: 없는 콕 `NOT_FOUND` → 받은 사람이 아니면 `FORBIDDEN` → 상태. 상태별 응답: 대기 중이면 거절 처리(204), 이미 거절했으면 204, 매칭됐으면 `ALREADY_MATCHED`, 이미 취소됐으면 `NOT_FOUND`, 레거시 만료 콕이면 `ALREADY_EXPIRED`.
+- 거절된 콕은 거절한 사람의 받은 콕 목록에서 빠지고, 거절당한 사람의 보낸 콕 목록에는 `status: "rejected"`로 남는다. 거절당한 사람은 그 콕을 취소하거나 같은 상대에게 다시 보낼 수 없다(`ALREADY_REJECTED`, `DUPLICATE`). 거절한 사람이 그 상대에게 콕을 보내려 해도 `ALREADY_REJECTED`이며 매칭되지 않는다.
+- 되돌리기(거절 취소)는 없다.
+
+### 콕 목록의 `status` 값
+
+`pending`, `matched`, `rejected`(보낸 목록에만 나타남), 그리고 운영 DB에 남아 있는 레거시 `expired`. 취소된 콕(`cancelled`)은 양쪽 목록에서 빠진다.
 
 ## 4. 채팅
 

@@ -38,6 +38,9 @@ management:
       enabled: false
 
 app:
+  cook:
+    # 받은 콕 거절 API 활성화. 꺼져 있어도 이미 저장된 거절 상태는 읽고 처리한다(facecook-be#74).
+    reject-enabled: ${COOK_REJECT_ENABLED:false}
   chat:
     open-time: ${CHAT_OPEN_TIME:09:00}
     close-time: ${CHAT_CLOSE_TIME:18:00}

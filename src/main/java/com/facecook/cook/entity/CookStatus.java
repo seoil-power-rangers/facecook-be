@@ -6,7 +6,8 @@ public enum CookStatus {
     PENDING("pending"),
     MATCHED("matched"),
     EXPIRED("expired"),
-    CANCELLED("cancelled");
+    CANCELLED("cancelled"),
+    REJECTED("rejected");
 
     private final String value;
 

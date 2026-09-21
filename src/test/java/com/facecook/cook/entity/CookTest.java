@@ -63,6 +63,75 @@ class CookTest {
         assertThat(cook.getStatus()).isEqualTo(CookStatus.EXPIRED);
     }
 
+    @Test
+    void cancelRejectsRejectedCookAndKeepsRejection() {
+        Cook cook = pendingCook();
+        cook.reject(RECEIVER);
+
+        assertThatThrownBy(() -> cook.cancel(SENDER)).isInstanceOfSatisfying(ApiException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.ALREADY_REJECTED));
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.REJECTED);
+    }
+
+    @Test
+    void receiverRejectsPendingCook() {
+        Cook cook = pendingCook();
+
+        cook.reject(RECEIVER);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.REJECTED);
+        assertThat(cook.isRejected()).isTrue();
+    }
+
+    @Test
+    void rejectingAlreadyRejectedCookKeepsStatusAndSucceeds() {
+        Cook cook = pendingCook();
+        cook.reject(RECEIVER);
+
+        cook.reject(RECEIVER);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.REJECTED);
+    }
+
+    @Test
+    void rejectRejectsNonReceiverBeforeAnyStatusCheck() {
+        Cook cancelled = pendingCook();
+        cancelled.cancel(SENDER);
+
+        assertThatThrownBy(() -> cancelled.reject(SENDER)).isInstanceOfSatisfying(ApiException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+    }
+
+    @Test
+    void rejectRejectsMatchedCookAndKeepsStatus() {
+        Cook cook = pendingCook();
+        cook.match(20L);
+
+        assertThatThrownBy(() -> cook.reject(RECEIVER)).isInstanceOfSatisfying(ApiException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.ALREADY_MATCHED));
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.MATCHED);
+    }
+
+    @Test
+    void rejectTreatsCancelledCookAsNotFound() {
+        Cook cook = pendingCook();
+        cook.cancel(SENDER);
+
+        assertThatThrownBy(() -> cook.reject(RECEIVER)).isInstanceOfSatisfying(ApiException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.CANCELLED);
+    }
+
+    @Test
+    void rejectRejectsLegacyExpiredCookAndKeepsStatus() {
+        Cook cook = pendingCook();
+        ReflectionTestUtils.setField(cook, "status", CookStatus.EXPIRED);
+
+        assertThatThrownBy(() -> cook.reject(RECEIVER)).isInstanceOfSatisfying(ApiException.class,
+                exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.ALREADY_EXPIRED));
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.EXPIRED);
+    }
+
     private static Cook pendingCook() {
         return Cook.pending(SENDER, RECEIVER, LocalDateTime.of(2026, 9, 21, 12, 0));
     }
