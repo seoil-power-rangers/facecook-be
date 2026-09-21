@@ -377,7 +377,7 @@ class CookServiceTest {
     @Test
     void cancelledCooksAreExcludedFromBothSentAndReceivedLists() {
         Cook cancelledSent = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(30));
-        cancelledSent.cancel();
+        cancelledSent.cancel(1L);
         Cook activeReceived = cook(11L, 3L, 1L, EVENT_NOW.minusMinutes(10));
         when(cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(1L, 1L))
                 .thenReturn(List.of(activeReceived, cancelledSent));

@@ -1,5 +1,7 @@
 package com.facecook.cook.entity;
 
+import com.facecook.common.exception.ApiException;
+import com.facecook.common.exception.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -51,14 +53,6 @@ public class Cook {
         return new Cook(senderId, receiverId, sentAt);
     }
 
-    /**
-     * 예전에는 보낸 지 1시간이 지나면 만료됐다. 지금은 시간 제한이 없다.
-     * 호출부는 그대로 두고, 맞콕하거나 취소하기 전까지는 pending을 유지한다.
-     */
-    public boolean expireIfOverdue(LocalDateTime now) {
-        return false;
-    }
-
     public boolean isPending() {
         return status == CookStatus.PENDING;
     }
@@ -68,7 +62,26 @@ public class Cook {
         this.status = CookStatus.MATCHED;
     }
 
-    public void cancel() {
+    /**
+     * 보낸 사람이 자신의 콕을 취소한다. 이미 취소된 콕을 다시 취소해도 상태는 그대로 두고 성공한다.
+     *
+     * <p>전제조건: {@code userId}가 이 콕의 보낸 사람이고, 매칭되거나 만료된 콕이 아니다.</p>
+     *
+     * <p>부작용: 상태를 {@link CookStatus#CANCELLED}로 바꾼다. 저장은 호출한 트랜잭션의 더티 체킹에 맡긴다.</p>
+     *
+     * <p>예외: {@code FORBIDDEN}(보낸 사람이 아님), {@code ALREADY_MATCHED}, {@code ALREADY_EXPIRED}.
+     * 검사 순서는 보낸 사람 → 매칭 → 만료다.</p>
+     */
+    public void cancel(Long userId) {
+        if (!senderId.equals(userId)) {
+            throw new ApiException(ErrorCode.FORBIDDEN);
+        }
+        if (status == CookStatus.MATCHED) {
+            throw new ApiException(ErrorCode.ALREADY_MATCHED);
+        }
+        if (status == CookStatus.EXPIRED) {
+            throw new ApiException(ErrorCode.ALREADY_EXPIRED);
+        }
         this.status = CookStatus.CANCELLED;
     }
 

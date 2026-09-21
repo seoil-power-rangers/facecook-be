@@ -119,7 +119,6 @@ public class CookService {
         enforceEventWideDailyLimit(now.toLocalDate(), today);
 
         Optional<Cook> reverseCook = cookRepository.findBySenderIdAndReceiverId(receiverId, senderId);
-        reverseCook.ifPresent(cook -> cook.expireIfOverdue(now));
 
         Cook cook;
         try {
@@ -140,62 +139,42 @@ public class CookService {
     /**
      * userId가 자신이 보낸 콕(cookId)을 취소한다.
      *
-     * <p>전제조건: cookId 존재, userId가 그 콕의 sender, 아직 매칭·만료 상태가
-     * 아님. 만료 여부는 저장된 값이 아니라 이 호출 시점에 실시간으로 판정한다
-     * (아래 부작용 참고).</p>
+     * <p>전제조건: cookId 존재, userId가 그 콕의 sender, 아직 매칭·만료 상태가 아님. 이미 CANCELLED인
+     * 콕을 다시 취소하면 상태를 바꾸지 않고 성공한다.</p>
      *
-     * <p>부작용: 상태를 CANCELLED로 바꾼다. 또한 호출 시점 기준으로 만료
-     * 기한이 지난 콕이면 이 메서드가 먼저 EXPIRED로 갱신해버려서 취소가
-     * {@code ALREADY_EXPIRED}로 실패한다 — "취소하려던 콕이 방금 막
-     * 만료됨" 케이스를 이렇게 잡아낸다.</p>
+     * <p>부작용: 상태를 CANCELLED로 바꾼다(저장은 트랜잭션 커밋 시 더티 체킹).</p>
      *
-     * <p>예외: {@code NOT_FOUND}, {@code FORBIDDEN}(본인 콕 아님),
-     * {@code ALREADY_MATCHED}, {@code ALREADY_EXPIRED}.</p>
+     * <p>예외: {@code NOT_FOUND}, {@code FORBIDDEN}(본인 콕 아님), {@code ALREADY_MATCHED},
+     * {@code ALREADY_EXPIRED}(레거시 EXPIRED 행). 검사 순서는 {@link Cook#cancel(Long)}이 정한다.</p>
      *
      * @see #send(Long, SendCookRequest)
+     * @see Cook#cancel(Long)
      */
     @Transactional
     public void cancel(Long userId, Long cookId) {
         Cook cook = cookRepository.findById(cookId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
-        if (!cook.getSenderId().equals(userId)) {
-            throw new ApiException(ErrorCode.FORBIDDEN);
-        }
-
-        cook.expireIfOverdue(now());
-        if (cook.getStatus() == CookStatus.MATCHED) {
-            throw new ApiException(ErrorCode.ALREADY_MATCHED);
-        }
-        if (cook.getStatus() == CookStatus.EXPIRED) {
-            throw new ApiException(ErrorCode.ALREADY_EXPIRED);
-        }
-        cook.cancel();
+        cook.cancel(userId);
     }
 
     /**
-     * userId가 보낸/받은 콕 목록(취소된 콕 제외)과 오늘·누적 사용량을 함께
-     * 반환한다.
+     * userId가 보낸/받은 콕 목록(취소된 콕 제외)과 오늘·누적 사용량을 함께 반환한다.
      *
      * <p>전제조건: 없음.</p>
      *
-     * <p>부작용: 겉보기엔 조회 전용이지만, 목록에 포함된 콕 중 만료 기한이
-     * 지난 pending 콕이 있으면 이 호출 안에서 즉시 EXPIRED로 갱신하고 그
-     * 결과를 응답에 반영한다({@code @Transactional}이지 readOnly가 아닌
-     * 이유) — 그래서 "만료됐는데 목록엔 아직 pending으로 보이는" 상태가
-     * 생기지 않는다.</p>
+     * <p>부작용: 없다. 조회 전용 트랜잭션이다.</p>
      *
      * <p>예외 없음.</p>
      *
      * @see #send(Long, SendCookRequest)
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public CookListResponse getCooks(Long userId) {
         LocalDateTime now = now();
         List<Cook> cooks = cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(userId, userId)
                 .stream()
                 .filter(cook -> cook.getStatus() != CookStatus.CANCELLED)
                 .toList();
-        cooks.forEach(cook -> cook.expireIfOverdue(now));
 
         Map<Long, ProfileResponse> profiles = profileResponses(
                 cooks.stream().map(cook -> cook.otherUserId(userId)).collect(Collectors.toSet())
