@@ -99,7 +99,7 @@ public class CookService {
      * 거절한 상대 → 중복 → 개인 한도 → 행사 전체 한도.</p>
      *
      * @see #cancel(Long, Long)
-     * @see #createMatch(Cook, Cook, LocalDateTime)
+     * @see #completeMutualMatch(Cook, Cook, LocalDateTime)
      */
     @Transactional
     public SendCookResponse send(Long senderId, SendCookRequest request) {
@@ -136,7 +136,7 @@ public class CookService {
 
         Optional<Cook> pendingReverseCook = reverseCook.filter(Cook::isPending);
         if (pendingReverseCook.isPresent()) {
-            createMatch(cook, pendingReverseCook.get(), now);
+            completeMutualMatch(cook, pendingReverseCook.get(), now);
         } else {
             pushNotificationService.cookReceived(receiverId);
         }
@@ -294,12 +294,42 @@ public class CookService {
         }
     }
 
-    private void createMatch(Cook cook, Cook reverseCook, LocalDateTime matchedAt) {
-        MatchInfo matchInfo = matchInfoRepository.saveAndFlush(
+    /**
+     * 서로 콕을 보낸 두 사람을 매칭으로 확정한다: 매칭 저장 → 양쪽 콕을 matched로 표시 → 두 사람에게
+     * 매칭 성사 푸시 요청. 이 세 동작을 이 순서로 묶는 것이 "매칭 성사"이고, {@link #send}만 부른다.
+     *
+     * <p>전제조건: {@code cook}은 방금 저장한 콕이고 {@code reverseCook}은 상대가 나에게 보내 둔 대기(pending)
+     * 콕이다. 호출한 트랜잭션에서 두 사용자 행을 이미 잠갔다.</p>
+     *
+     * <p>부작용: {@code MatchInfo}를 저장하고 즉시 flush한다(매칭 ID가 필요해서). 두 콕에 매칭 ID를 기록하며
+     * 상태를 matched로 바꾼다(저장은 트랜잭션 커밋 시 더티 체킹). 두 사람에게 푸시를 요청한다.</p>
+     *
+     * <p>예외 없음(저장 실패는 그대로 전파되어 트랜잭션이 롤백된다).</p>
+     */
+    private void completeMutualMatch(Cook cook, Cook reverseCook, LocalDateTime matchedAt) {
+        MatchInfo matchInfo = saveMatch(cook, matchedAt);
+        markCooksMatched(cook, reverseCook, matchInfo);
+        requestMatchCreatedPush(matchInfo);
+    }
+
+    /** 두 사람 사이의 매칭을 저장하고 즉시 flush해서 매칭 ID를 얻는다. */
+    private MatchInfo saveMatch(Cook cook, LocalDateTime matchedAt) {
+        return matchInfoRepository.saveAndFlush(
                 MatchInfo.create(cook.getSenderId(), cook.getReceiverId(), matchedAt)
         );
+    }
+
+    /** 서로가 보낸 두 콕을 같은 매칭에 연결하고 matched 상태로 바꾼다. */
+    private void markCooksMatched(Cook cook, Cook reverseCook, MatchInfo matchInfo) {
         cook.match(matchInfo.getId());
         reverseCook.match(matchInfo.getId());
+    }
+
+    /**
+     * 매칭에 속한 두 사람 모두에게 매칭 성사 푸시를 "요청"한다. 실제 발송은 커밋 뒤에 하고, 받는 사람이 지금
+     * 앱에 접속 중이면 보내지 않는다({@link ParticipantPushNotificationService}의 공통 규칙).
+     */
+    private void requestMatchCreatedPush(MatchInfo matchInfo) {
         pushNotificationService.matchCreated(matchInfo.getUserAId(), matchInfo.getId());
         pushNotificationService.matchCreated(matchInfo.getUserBId(), matchInfo.getId());
     }
