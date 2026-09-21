@@ -27,13 +27,14 @@ main 머지 → deploy.yml: test → 이미지 빌드·ECR 푸시 → 서버 순
   실행 중인 컨테이너의 이미지가 방금 배포한 digest인지, 프로세스가 떠 있는지, `/actuator/health`가 UP을
   응답하는지(최대 약 3분). 그 뒤에 ALB 대상 그룹이 healthy가 될 때까지 기다린다. ALB의 healthy 값은 이전
   컨테이너가 남긴 판정일 수 있어서 그것만으로 판단하지 않는다
-- 배포 로그의 `배포 이미지: <repo>@sha256:...` 줄이 이번 배포의 이미지다
+- 배포 로그의 `배포 이미지: <repo>@sha256:...`와 `배포 digest: sha256:...` 줄이 이번 배포의 이미지다. 저장소 주소는
+  GitHub secret이라 로그에서 `***`로 가려지지만 digest는 그대로 보인다
 
 ### 환경변수만 바꿔 컨테이너를 다시 만들 때 (예: `COOK_REJECT_ENABLED` 활성화)
 
 `docker restart`로는 환경변수가 갱신되지 않는다. env 파일을 다시 만들고 컨테이너를 재생성해야 하며, 이때도
 **현재 배포된 것과 같은 digest**로 만든다(`:latest`를 새로 받지 않는다). 현재 digest는 서버에서
-`docker inspect -f '{{.Config.Image}}' facecook-app`으로, 또는 마지막 배포 로그의 `배포 이미지` 줄로 확인한다.
+`docker inspect -f '{{.Config.Image}}' facecook-app`으로, 또는 마지막 배포 로그의 `배포 digest` 줄로 확인한다.
 활성화·비활성화 작업은 일반 배포와 동시에 하지 않는다 — 진행 중인 배포 실행과 SSM 명령이 끝났는지 확인하고,
 작업이 끝날 때까지 새 배포를 시작하지 않는다.
 
