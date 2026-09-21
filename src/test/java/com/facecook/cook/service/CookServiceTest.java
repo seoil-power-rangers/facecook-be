@@ -59,6 +59,9 @@ class CookServiceTest {
     private CookUserRepository cookUserRepository;
 
     @Mock
+    private EventLimitLock eventLimitLock;
+
+    @Mock
     private ProfileRepository profileRepository;
 
     @Mock
@@ -87,6 +90,7 @@ class CookServiceTest {
                 cookRepository,
                 matchInfoRepository,
                 cookUserRepository,
+                eventLimitLock,
                 profileRepository,
                 activityLookup,
                 pushNotificationService,
@@ -214,7 +218,7 @@ class CookServiceTest {
     void eventWideDailyLimitGrowsWithEventDay() {
         Clock secondDay = Clock.fixed(Instant.parse("2026-10-01T03:00:00Z"), ZoneOffset.UTC);
         CookService secondDayService = new CookService(
-                cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
+                cookRepository, matchInfoRepository, cookUserRepository, eventLimitLock, profileRepository,
                 activityLookup, pushNotificationService, secondDay
         );
         givenLockedUsers(1L, 2L);
@@ -230,7 +234,7 @@ class CookServiceTest {
     void eventWideDailyLimitDoesNotApplyOutsideEventWindow() {
         Clock beforeEvent = Clock.fixed(Instant.parse("2026-01-01T03:00:00Z"), ZoneOffset.UTC);
         CookService devService = new CookService(
-                cookRepository, matchInfoRepository, cookUserRepository, profileRepository,
+                cookRepository, matchInfoRepository, cookUserRepository, eventLimitLock, profileRepository,
                 activityLookup, pushNotificationService, beforeEvent
         );
         givenLockedUsers(1L, 2L);
@@ -240,6 +244,31 @@ class CookServiceTest {
 
         assertThat(response.status()).isEqualTo("pending");
         verify(cookRepository, never()).countBySentAtGreaterThanEqualAndSentAtLessThan(any(), any());
+        verify(eventLimitLock, never()).acquire();
+    }
+
+    @Test
+    void sendLocksEventLimitAfterUsersAndBeforeAnyPlainRead() {
+        givenLockedUsers(1L, 2L);
+        when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        cookService.send(1L, new SendCookRequest(2L));
+
+        InOrder order = inOrder(cookUserRepository, eventLimitLock, matchInfoRepository, cookRepository);
+        order.verify(cookUserRepository).findAllByIdForUpdate(List.of(1L, 2L));
+        order.verify(eventLimitLock).acquire();
+        order.verify(matchInfoRepository).existsBetween(1L, 2L);
+        order.verify(cookRepository).countBySentAtGreaterThanEqualAndSentAtLessThan(any(), any());
+    }
+
+    @Test
+    void sendDoesNotTakeEventLimitLockWhenReceiverIsMissingOrSelf() {
+        when(cookUserRepository.findAllByIdForUpdate(List.of(1L, 2L))).thenReturn(List.of(user(1L)));
+
+        assertErrorCode(() -> cookService.send(1L, new SendCookRequest(2L)), ErrorCode.NOT_FOUND);
+        assertErrorCode(() -> cookService.send(1L, new SendCookRequest(1L)), ErrorCode.SELF);
+
+        verify(eventLimitLock, never()).acquire();
     }
 
     @Test

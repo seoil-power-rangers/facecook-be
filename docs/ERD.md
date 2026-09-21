@@ -369,6 +369,17 @@ CREATE TABLE match_mission_assignment (
 CREATE INDEX idx_assignment_template ON match_mission_assignment (mission_template_id);
 ```
 
+`V5__add_event_limit_lock.sql`은 행사 전체 하루 콕 한도의 동시성 잠금용 테이블을 추가한다. 데이터는 없고
+행 하나(`lock_id = 1`)만 있다. 한도가 있는 날의 콕 전송이 이 행을 `FOR UPDATE`로 잠가서, 서로 다른 사용자
+쌍의 전송도 한 번에 하나씩만 "전체 건수 확인 → 저장"을 하게 한다. 한도 값이나 건수는 저장하지 않는다.
+
+```sql
+CREATE TABLE event_limit_lock (
+    lock_id INT PRIMARY KEY
+);
+INSERT INTO event_limit_lock (lock_id) VALUES (1);
+```
+
 ## 6. 이번 문서 범위 밖
 
 - 관리자 계정을 `users`에 실제로 둘지 여부 — 로그인 설계 담당과 별도 합의 필요
