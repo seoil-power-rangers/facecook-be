@@ -9,7 +9,12 @@ permissions:
   contents: read
 
 jobs:
+  # 같은 커밋의 테스트가 통과해야만 이미지를 빌드·배포한다.
+  test:
+    uses: ./.github/workflows/test.yml
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.vars.outputs.sha_short }}
@@ -40,8 +45,9 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      # 테스트는 선행 test job이 같은 커밋에서 이미 실행했다.
       - name: Build jar
-        run: ./gradlew clean bootJar -x test --no-daemon
+        run: ./gradlew clean bootJar --no-daemon
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
