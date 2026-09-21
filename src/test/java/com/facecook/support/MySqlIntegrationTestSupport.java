@@ -5,13 +5,11 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.MySQLContainer;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -25,6 +23,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 실제 MySQL 8.0 위에서 JPA·Flyway·트랜잭션 잠금을 검증하는 통합 테스트의 공통 기반.
@@ -55,6 +55,9 @@ import java.util.concurrent.TimeoutException;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 public abstract class MySqlIntegrationTestSupport {
 
+    // 교착·잠금 누락을 잡기 위한 상한이라 넉넉하게 둔다. 컴파일과 컨테이너 기동이 겹친 첫 실행에서도 정상 대기가 이 안에 끝난다.
+    private static final Duration LOCK_WAIT_TIMEOUT = Duration.ofSeconds(30);
+
     private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("facecook")
             .withUsername("facecook")
@@ -72,8 +75,6 @@ public abstract class MySqlIntegrationTestSupport {
         registry.add("spring.datasource.password", MYSQL::getPassword);
     }
 
-    // 교착·잠금 누락을 잡기 위한 상한이라 넉넉하게 둔다. 컴파일과 컨테이너 기동이 겹친 첫 실행에서도 정상 대기가 이 안에 끝난다.
-    private static final Duration LOCK_WAIT_TIMEOUT = Duration.ofSeconds(30);
 
     @Autowired
     protected PlatformTransactionManager transactionManager;
