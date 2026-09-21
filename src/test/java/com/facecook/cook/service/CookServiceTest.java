@@ -173,6 +173,30 @@ class CookServiceTest {
     }
 
     @Test
+    void personalDailyLimitIsCheckedBeforeEventWideLimit() {
+        givenLockedUsers(1L, 2L);
+        when(cookRepository.countBySenderIdAndSentAtGreaterThanEqualAndSentAtLessThan(eq(1L), any(), any()))
+                .thenReturn(10L);
+
+        assertErrorCode(() -> cookService.send(1L, new SendCookRequest(2L)), ErrorCode.DAILY_LIMIT);
+
+        verify(cookRepository, never()).countBySentAtGreaterThanEqualAndSentAtLessThan(any(), any());
+        verify(cookRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void duplicateIsCheckedBeforeAnyLimitCount() {
+        givenLockedUsers(1L, 2L);
+        when(cookRepository.existsBySenderIdAndReceiverId(1L, 2L)).thenReturn(true);
+
+        assertErrorCode(() -> cookService.send(1L, new SendCookRequest(2L)), ErrorCode.DUPLICATE);
+
+        verify(cookRepository, never())
+                .countBySenderIdAndSentAtGreaterThanEqualAndSentAtLessThan(any(), any(), any());
+        verify(cookRepository, never()).countBySentAtGreaterThanEqualAndSentAtLessThan(any(), any());
+    }
+
+    @Test
     void allowsCookJustBelowEventWideDailyLimit() {
         givenLockedUsers(1L, 2L);
         when(cookRepository.countBySentAtGreaterThanEqualAndSentAtLessThan(
