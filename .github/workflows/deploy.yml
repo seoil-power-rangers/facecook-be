@@ -123,7 +123,8 @@ jobs:
 
           # 서버가 하나도 없으면 반복문이 한 번도 돌지 않고 배포가 성공으로 끝난다.
           INSTANCE_IDS="${{ steps.instances.outputs.ids }}"
-          if [ -z "$INSTANCE_IDS" ]; then
+          # ASG 이름이 틀리면 `--output text`가 빈 값이 아니라 None을 돌려준다.
+          if [ -z "$INSTANCE_IDS" ] || [ "$INSTANCE_IDS" = "None" ]; then
             echo "::error::InService 인스턴스가 없어 배포할 서버가 없다."
             exit 1
           fi
@@ -138,8 +139,8 @@ jobs:
             # 덮어써지지 않게 하기 위해서다.
             #
             # SSM 스크립트는 한 줄이 실패해도 다음 줄을 계속 실행한다. env 파일 갱신·ECR 로그인·이미지 pull이
-            # 실패했는데도 기존 컨테이너를 지우면 그 서버가 죽은 채로 남으므로, 이 세 줄은 실패 즉시 멈춘다
-            # (실행 중인 컨테이너를 지우기 전에).
+            # 실패했는데도 기존 컨테이너를 지우면 그 서버가 죽은 채로 남으므로, 이 세 줄과 아래 기동 확인에 쓰는
+            # curl 존재 확인은 실패 즉시 멈춘다(실행 중인 컨테이너를 지우기 전에).
             #
             # 마지막 세 줄이 서버 안 확인이다: 실행 중인 컨테이너가 방금 배포한 이미지에서 만들어졌는지,
             # 프로세스가 떠 있는지, 애플리케이션이 UP을 응답할 때까지(최대 약 3분) 기다린다. 하나라도
@@ -149,6 +150,7 @@ jobs:
                 ($refresh_env + " || exit 1"),
                 "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($ecr) || exit 1",
                 "docker pull \($image) || exit 1",
+                "command -v curl >/dev/null || { echo \"서버에 curl이 없어 기동 확인을 할 수 없다\" >&2; exit 1; }",
                 "docker rm -f facecook-app || true",
                 "docker run -d --name facecook-app --restart unless-stopped --env-file /opt/facecook/app.env -p 8080:8080 \($image)",
                 "if [ \"$(docker inspect -f \"{{.Config.Image}}\" facecook-app)\" != \"\($image)\" ]; then echo \"실행 중인 컨테이너가 배포한 이미지가 아니다\" >&2; exit 1; fi",
@@ -168,12 +170,16 @@ jobs:
             # 조회가 잠깐 실패할 수 있어 그동안은 대기 중으로 본다.
             STATUS=Pending
             LAST_QUERY_ERROR=""
+            QUERY_ERROR_FILE=$(mktemp)
             for i in $(seq 1 120); do
-              if RESULT=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$ID" --query 'Status' --output text 2>&1); then
+              # stderr는 상태값과 섞이지 않게 따로 받는다(CLI 경고가 Success를 오염시키지 않도록).
+              if RESULT=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$ID" --query 'Status' --output text 2>"$QUERY_ERROR_FILE"); then
                 STATUS="$RESULT"
+                # 이전에 난 일시적 오류(명령을 보낸 직후의 조회 실패 등)가 나중 실패 로그에 남지 않게 한다.
+                LAST_QUERY_ERROR=""
               else
                 STATUS=Pending
-                LAST_QUERY_ERROR="$RESULT"
+                LAST_QUERY_ERROR=$(cat "$QUERY_ERROR_FILE")
               fi
               case "$STATUS" in
                 Pending|InProgress|Delayed) sleep 5 ;;
