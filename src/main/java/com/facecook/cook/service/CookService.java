@@ -109,37 +109,10 @@ public class CookService {
         }
 
         lockUsersAndValidateReceiver(senderId, receiverId);
-        if (matchInfoRepository.existsBetween(senderId, receiverId)) {
-            throw new ApiException(ErrorCode.ALREADY_MATCHED);
-        }
-        Optional<Cook> reverseCook = cookRepository.findBySenderIdAndReceiverId(receiverId, senderId);
-        if (reverseCook.filter(Cook::isRejected).isPresent()) {
-            throw new ApiException(ErrorCode.ALREADY_REJECTED, "이미 거절한 상대예요.");
-        }
-        if (cookRepository.existsBySenderIdAndReceiverId(senderId, receiverId)) {
-            throw new ApiException(ErrorCode.DUPLICATE);
-        }
-
         LocalDateTime now = now();
-        DateRange today = today(now.toLocalDate());
-        if (countSent(senderId, today) >= DAILY_LIMIT) {
-            throw new ApiException(ErrorCode.DAILY_LIMIT);
-        }
-        enforceEventWideDailyLimit(now.toLocalDate(), today);
-
-        Cook cook;
-        try {
-            cook = cookRepository.saveAndFlush(Cook.pending(senderId, receiverId, now));
-        } catch (DataIntegrityViolationException exception) {
-            throw new ApiException(ErrorCode.DUPLICATE, exception);
-        }
-
-        Optional<Cook> pendingReverseCook = reverseCook.filter(Cook::isPending);
-        if (pendingReverseCook.isPresent()) {
-            completeMutualMatch(cook, pendingReverseCook.get(), now);
-        } else {
-            pushNotificationService.cookReceived(receiverId);
-        }
+        Optional<Cook> reverseCook = validateSendable(senderId, receiverId, now);
+        Cook cook = savePendingCook(senderId, receiverId, now);
+        completeSend(cook, reverseCook, now);
         return SendCookResponse.from(cook);
     }
 
@@ -229,6 +202,69 @@ public class CookService {
                 received,
                 new CookUsageResponse(todayUsed, DAILY_LIMIT, totalUsed)
         );
+    }
+
+    /**
+     * 이 콕을 보낼 수 있는지 검사하고, 그 과정에서 조회한 상대의 역방향 콕을 돌려준다(맞콕 판단에 다시 쓴다).
+     *
+     * <p>전제조건: 호출한 트랜잭션에서 두 사용자 행을 이미 잠갔다(클래스 Javadoc의 잠금 규약). 이 잠금이 있어야
+     * 아래 조회와 개수 확인이 같은 쌍의 다른 명령과 겹치지 않는다.</p>
+     *
+     * <p>부작용: 없다(조회 전용).</p>
+     *
+     * <p>예외와 검사 순서: {@code ALREADY_MATCHED}(이미 매칭됨) → {@code ALREADY_REJECTED}(내가 이미 거절한
+     * 상대 — 상대가 나에게 보낸 콕이 내 거절로 REJECTED 상태) → {@code DUPLICATE}(이미 보낸 콕) →
+     * {@code DAILY_LIMIT} → {@code EVENT_LIMIT}. 순서를 바꾸면 같은 요청이 다른 오류 코드를 받게 된다.</p>
+     */
+    private Optional<Cook> validateSendable(Long senderId, Long receiverId, LocalDateTime now) {
+        if (matchInfoRepository.existsBetween(senderId, receiverId)) {
+            throw new ApiException(ErrorCode.ALREADY_MATCHED);
+        }
+        Optional<Cook> reverseCook = cookRepository.findBySenderIdAndReceiverId(receiverId, senderId);
+        if (reverseCook.filter(Cook::isRejected).isPresent()) {
+            throw new ApiException(ErrorCode.ALREADY_REJECTED, "이미 거절한 상대예요.");
+        }
+        if (cookRepository.existsBySenderIdAndReceiverId(senderId, receiverId)) {
+            throw new ApiException(ErrorCode.DUPLICATE);
+        }
+
+        DateRange today = today(now.toLocalDate());
+        if (countSent(senderId, today) >= DAILY_LIMIT) {
+            throw new ApiException(ErrorCode.DAILY_LIMIT);
+        }
+        enforceEventWideDailyLimit(now.toLocalDate(), today);
+        return reverseCook;
+    }
+
+    /**
+     * 대기(pending) 상태의 새 콕을 저장하고 즉시 flush한다.
+     *
+     * <p>부작용: {@code Cook} 행을 저장한다. flush로 (sender, receiver) unique 제약을 이 자리에서 확인한다.</p>
+     *
+     * <p>예외: {@code DUPLICATE} — 검사 이후 다른 트랜잭션이 같은 쌍을 먼저 저장해 unique 제약에 걸린 경우.</p>
+     */
+    private Cook savePendingCook(Long senderId, Long receiverId, LocalDateTime sentAt) {
+        try {
+            return cookRepository.saveAndFlush(Cook.pending(senderId, receiverId, sentAt));
+        } catch (DataIntegrityViolationException exception) {
+            throw new ApiException(ErrorCode.DUPLICATE, exception);
+        }
+    }
+
+    /**
+     * 저장한 콕의 후속 처리: 상대가 이미 나에게 보내 둔 대기 콕이 있으면 맞콕이므로 매칭을 확정하고, 없으면
+     * 받는 사람에게 콕 도착 푸시를 요청한다.
+     *
+     * <p>부작용: 맞콕이면 {@link #completeMutualMatch}의 부작용(매칭 저장, 두 콕 matched, 푸시 요청 2건).
+     * 아니면 콕 도착 푸시 요청 1건.</p>
+     */
+    private void completeSend(Cook cook, Optional<Cook> reverseCook, LocalDateTime now) {
+        Optional<Cook> pendingReverseCook = reverseCook.filter(Cook::isPending);
+        if (pendingReverseCook.isPresent()) {
+            completeMutualMatch(cook, pendingReverseCook.get(), now);
+        } else {
+            pushNotificationService.cookReceived(cook.getReceiverId());
+        }
     }
 
     /**
