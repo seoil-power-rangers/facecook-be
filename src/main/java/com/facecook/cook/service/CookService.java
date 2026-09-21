@@ -122,12 +122,7 @@ public class CookService {
 
         LocalDateTime now = now();
         DateRange today = today(now.toLocalDate());
-        long todayUsed = cookRepository.countBySenderIdAndSentAtGreaterThanEqualAndSentAtLessThan(
-                senderId,
-                today.startInclusive(),
-                today.endExclusive()
-        );
-        if (todayUsed >= DAILY_LIMIT) {
+        if (countSent(senderId, today) >= DAILY_LIMIT) {
             throw new ApiException(ErrorCode.DAILY_LIMIT);
         }
         enforceEventWideDailyLimit(now.toLocalDate(), today);
@@ -227,16 +222,31 @@ public class CookService {
                 .toList();
 
         DateRange today = today(now.toLocalDate());
-        long todayUsed = cookRepository.countBySenderIdAndSentAtGreaterThanEqualAndSentAtLessThan(
-                userId,
-                today.startInclusive(),
-                today.endExclusive()
-        );
+        long todayUsed = countSent(userId, today);
         long totalUsed = cookRepository.countBySenderId(userId);
         return new CookListResponse(
                 sent,
                 received,
                 new CookUsageResponse(todayUsed, DAILY_LIMIT, totalUsed)
+        );
+    }
+
+    /**
+     * userId가 {@code range} 안에 보낸 콕 수. 개인 하루 한도 검사({@link #send})와 사용량 표시
+     * ({@link #getCooks})가 같은 규칙으로 세도록 한 곳에 둔다.
+     *
+     * <p>전제조건: 없음.</p>
+     *
+     * <p>부작용: 없다(조회 전용).</p>
+     *
+     * <p>상태 조건을 두지 않는다 — 취소·거절·만료된 콕도 센다. 그래서 콕을 취소하거나 상대가 거절해도
+     * 오늘 사용 횟수는 돌아오지 않는다(돌려주면 콕을 뿌렸다가 회수하는 식으로 하루 한도를 우회할 수 있다).</p>
+     */
+    private long countSent(Long userId, DateRange range) {
+        return cookRepository.countBySenderIdAndSentAtGreaterThanEqualAndSentAtLessThan(
+                userId,
+                range.startInclusive(),
+                range.endExclusive()
         );
     }
 
