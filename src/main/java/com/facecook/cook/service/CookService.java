@@ -45,7 +45,8 @@ import java.util.stream.Collectors;
  * 처리는 {@link com.facecook.match.service.MatchService}가 담당한다.</p>
  *
  * <p>잠금 규약: 콕의 상태를 바꾸는 {@link #send}, {@link #cancel}, {@link #reject}는 모두 같은 두 사용자
- * 행을 작은 userId부터 먼저 잠근다. 취소·거절은 사용자 행을 잠근 뒤에야 콕을 잠금 조회로 처음 읽으므로,
+ * 행을 작은 userId부터 먼저 잠근다. {@link #send}는 행사 한도가 있는 날에 한해 그 다음에 {@link EventLimitLock}을
+ * 잠그고, 그 뒤에야 일반 조회를 시작한다(아래 참고). 취소·거절은 사용자 행을 잠근 뒤에야 콕을 잠금 조회로 처음 읽으므로,
  * 같은 사용자 쌍에 대한 명령은 서로 직렬화되고 나중 명령은 먼저 커밋된 최신 상태를 보고 판정한다.
  * 이 순서를 어기면(예: 콕을 먼저 로드) 잠금 전 상태로 판정하거나 교착이 날 수 있다.</p>
  */
@@ -70,6 +71,7 @@ public class CookService {
     private final CookRepository cookRepository;
     private final MatchInfoRepository matchInfoRepository;
     private final CookUserRepository cookUserRepository;
+    private final EventLimitLock eventLimitLock;
     private final ProfileRepository profileRepository;
     private final ProfileActivityLookup activityLookup;
     private final ParticipantPushNotificationService pushNotificationService;
@@ -110,6 +112,7 @@ public class CookService {
 
         lockUsersAndValidateReceiver(senderId, receiverId);
         LocalDateTime now = now();
+        lockEventWideLimitIfApplicable(now.toLocalDate());
         Optional<Cook> reverseCook = validateSendable(senderId, receiverId, now);
         Cook cook = savePendingCook(senderId, receiverId, now);
         completeSend(cook, reverseCook, now);
@@ -202,6 +205,21 @@ public class CookService {
                 received,
                 new CookUsageResponse(todayUsed, DAILY_LIMIT, totalUsed)
         );
+    }
+
+    /**
+     * 행사 전체 하루 한도가 있는 날이면 그 한도의 동시성 잠금을 얻는다. 한도가 없는 날(로컬·개발, 행사 기간 외)에는
+     * 아무 것도 하지 않아 전송이 서로 기다리지 않는다.
+     *
+     * <p>전제조건: 사용자 행 잠금을 이미 얻었고 아직 일반 조회를 하지 않았다 — 이 호출은 {@link #validateSendable}의
+     * 첫 조회보다 앞에 있어야 한다(REPEATABLE-READ 스냅샷 시점, {@link EventLimitLock#acquire} 참고).</p>
+     *
+     * <p>부작용: 한도가 있는 날이면 {@code event_limit_lock} 행을 배타 잠금한다(트랜잭션이 끝날 때까지).</p>
+     */
+    private void lockEventWideLimitIfApplicable(LocalDate today) {
+        if (EVENT_WIDE_DAILY_LIMITS.containsKey(today)) {
+            eventLimitLock.acquire();
+        }
     }
 
     /**

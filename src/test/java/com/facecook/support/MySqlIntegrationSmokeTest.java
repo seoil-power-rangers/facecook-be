@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class MySqlIntegrationSmokeTest extends MySqlIntegrationTestSupport {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
     @Autowired
     private JdbcTemplate jdbcTemplate;

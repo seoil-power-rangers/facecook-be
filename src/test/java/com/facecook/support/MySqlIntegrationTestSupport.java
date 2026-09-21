@@ -1,12 +1,17 @@
 package com.facecook.support;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.MySQLContainer;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -14,6 +19,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 실제 MySQL 8.0 위에서 JPA·Flyway·트랜잭션 잠금을 검증하는 통합 테스트의 공통 기반.
@@ -33,6 +44,9 @@ import java.time.Duration;
  * <p>잠금 대기 확인: {@link #awaitLockWaiters}는 InnoDB가 "잠금을 기다리는 중"(LOCK WAIT)으로 보고하는
  * 트랜잭션 수를 root 연결로 직접 조회한다. 동시성 테스트가 {@code sleep}으로 "아마 기다리고 있을 것"이라고
  * 추측하지 않고, 두 번째 트랜잭션이 실제로 잠금에서 멈춘 것을 확인한 뒤 첫 트랜잭션을 커밋하게 한다.</p>
+ *
+ * <p>순서 고정: {@link #firstCommitsBeforeSecond}는 첫 명령을 커밋 전 상태로 붙잡아 두고 두 번째 명령이 잠금 대기에
+ * 들어간 것을 확인한 뒤에 커밋한다. "먼저 커밋한 쪽이 이긴다"는 조합을 시간 추측 없이 결정적으로 만든다.</p>
  *
  * @see ConcurrentRunner
  */
@@ -56,6 +70,46 @@ public abstract class MySqlIntegrationTestSupport {
         registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
+    }
+
+    // 교착·잠금 누락을 잡기 위한 상한이라 넉넉하게 둔다. 컴파일과 컨테이너 기동이 겹친 첫 실행에서도 정상 대기가 이 안에 끝난다.
+    private static final Duration LOCK_WAIT_TIMEOUT = Duration.ofSeconds(30);
+
+    @Autowired
+    protected PlatformTransactionManager transactionManager;
+
+    /**
+     * 첫 명령을 바깥 트랜잭션 안에서 실행해 잠금을 커밋 전까지 쥐게 한 뒤, 다른 스레드에서 두 번째 명령을 시작한다.
+     * 두 번째 명령이 DB에서 잠금 대기(LOCK WAIT) 상태에 들어간 것을 확인한 뒤에야 첫 명령을 커밋한다. 잠금이
+     * 기다리게 하지 못해 두 번째 명령이 커밋 전에 끝나면 실패시키고, 커밋 뒤에 끝난 두 번째 명령의 예외를
+     * 돌려준다(성공이면 null).
+     */
+    protected Throwable firstCommitsBeforeSecond(Runnable first, Runnable second) throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            @SuppressWarnings("unchecked")
+            Future<Throwable>[] secondResult = new Future[1];
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                first.run();
+                secondResult[0] = executor.submit(() -> {
+                    try {
+                        second.run();
+                        return null;
+                    } catch (Throwable throwable) {
+                        return throwable;
+                    }
+                });
+                awaitLockWaiters(1, LOCK_WAIT_TIMEOUT);
+                assertThat(secondResult[0].isDone())
+                        .as("두 번째 명령은 첫 명령이 커밋될 때까지 잠금으로 기다려야 한다")
+                        .isFalse();
+            });
+            return secondResult[0].get(LOCK_WAIT_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
+        } catch (ExecutionException | TimeoutException exception) {
+            throw new AssertionError("두 번째 명령이 커밋 뒤에도 끝나지 않았다", exception);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     /**

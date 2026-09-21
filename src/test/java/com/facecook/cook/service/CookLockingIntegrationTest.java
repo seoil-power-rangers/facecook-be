@@ -19,8 +19,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -31,12 +29,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -53,10 +45,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>부작용: 테스트마다 사용자 두 명과 콕·매칭 행을 커밋하고 끝나면 삭제한다. 푸시는 목으로 대체한다.
  * 사용자 ID 순서(보내는 사람이 작은 경우와 큰 경우)를 모두 돌려 잠금 순서가 방향과 무관한지 본다.</p>
  */
-@Import(CookService.class)
+@Import({CookService.class, EventLimitLock.class})
 class CookLockingIntegrationTest extends MySqlIntegrationTestSupport {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(15);
+    private static final Duration TIMEOUT = Duration.ofSeconds(30);
 
     @TestConfiguration
     static class ClockConfig {
@@ -80,9 +72,6 @@ class CookLockingIntegrationTest extends MySqlIntegrationTestSupport {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private PlatformTransactionManager transactionManager;
 
     private final List<Long> userIds = new ArrayList<>();
 
@@ -239,40 +228,6 @@ class CookLockingIntegrationTest extends MySqlIntegrationTestSupport {
 
         assertThat(outcomes).allMatch(ConcurrentRunner.Outcome::succeeded);
         assertThat(status(cookId)).isEqualTo("rejected");
-    }
-
-    /**
-     * 첫 명령을 바깥 트랜잭션 안에서 실행해 잠금을 커밋 전까지 쥐게 한 뒤, 다른 스레드에서 두 번째 명령을 시작한다.
-     * 두 번째 명령이 DB에서 잠금 대기(LOCK WAIT) 상태에 들어간 것을 확인한 뒤에야 첫 명령을 커밋한다. 잠금이
-     * 기다리게 하지 못해 두 번째 명령이 커밋 전에 끝나면 실패시키고, 커밋 뒤에 끝난 두 번째 명령의 예외를
-     * 돌려준다(성공이면 null).
-     */
-    private Throwable firstCommitsBeforeSecond(Runnable first, Runnable second) throws Exception {
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        try {
-            @SuppressWarnings("unchecked")
-            Future<Throwable>[] secondResult = new Future[1];
-            new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-                first.run();
-                secondResult[0] = executor.submit(() -> {
-                    try {
-                        second.run();
-                        return null;
-                    } catch (Throwable throwable) {
-                        return throwable;
-                    }
-                });
-                awaitLockWaiters(1, TIMEOUT);
-                assertThat(secondResult[0].isDone())
-                        .as("두 번째 명령은 첫 명령이 커밋될 때까지 잠금으로 기다려야 한다")
-                        .isFalse();
-            });
-            return secondResult[0].get(TIMEOUT.toSeconds(), TimeUnit.SECONDS);
-        } catch (ExecutionException | TimeoutException exception) {
-            throw new AssertionError("두 번째 명령이 커밋 뒤에도 끝나지 않았다", exception);
-        } finally {
-            executor.shutdownNow();
-        }
     }
 
     private static void assertErrorCode(Throwable actual, ErrorCode expected) {
