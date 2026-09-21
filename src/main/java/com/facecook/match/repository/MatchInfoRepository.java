@@ -2,9 +2,11 @@ package com.facecook.match.repository;
 
 import com.facecook.match.entity.MatchInfo;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface MatchInfoRepository extends JpaRepository<MatchInfo, Long> {
@@ -19,6 +21,42 @@ public interface MatchInfoRepository extends JpaRepository<MatchInfo, Long> {
             @Param("firstUserId") Long firstUserId,
             @Param("secondUserId") Long secondUserId
     );
+
+    /**
+     * A쪽 참가자의 읽음 시각을 {@code readAt}으로 올린다. 이 컬럼만 바꾸는 조건부 UPDATE이고, 기존 값이 없거나
+     * {@code readAt}보다 이전일 때만 갱신한다.
+     *
+     * <p>엔티티를 읽어 고친 뒤 저장하면 행의 모든 컬럼을 UPDATE하므로, 두 참가자가 동시에 읽을 때 서로 상대의
+     * 읽음 시각을 예전 값으로 되돌릴 수 있고, 같은 참가자의 요청이 커밋 순서가 뒤바뀌면 시각이 뒤로 물러난다.
+     * 읽음 시각은 안읽음 개수의 기준이라 뒤로 물러나면 이미 읽은 메시지가 다시 안읽음으로 나타난다.</p>
+     *
+     * <p>전제조건: {@code matchId} 매칭이 존재하고 호출한 쪽이 A쪽 참가자다(호출부가 확인한다). 호출한
+     * 트랜잭션이 필요하다.</p>
+     *
+     * <p>부작용: 행 하나를 UPDATE한다. 영속성 컨텍스트를 비우므로 이 호출 전에 읽은 {@link MatchInfo}는 더 이상
+     * 최신이 아니다.</p>
+     *
+     * @return 갱신한 행 수. 0이면 이미 같거나 더 나중 시각이 기록돼 있어 바꾸지 않았다.
+     * @see #markReadAsUserB
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update MatchInfo matchInfo
+            set matchInfo.userALastReadAt = :readAt
+            where matchInfo.id = :matchId
+              and (matchInfo.userALastReadAt is null or matchInfo.userALastReadAt < :readAt)
+            """)
+    int markReadAsUserA(@Param("matchId") Long matchId, @Param("readAt") LocalDateTime readAt);
+
+    /** {@link #markReadAsUserA}와 같은 규칙으로 B쪽 참가자의 읽음 시각만 올린다. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update MatchInfo matchInfo
+            set matchInfo.userBLastReadAt = :readAt
+            where matchInfo.id = :matchId
+              and (matchInfo.userBLastReadAt is null or matchInfo.userBLastReadAt < :readAt)
+            """)
+    int markReadAsUserB(@Param("matchId") Long matchId, @Param("readAt") LocalDateTime readAt);
 
     List<MatchInfo> findAllByUserAIdOrUserBIdOrderByMatchedAtDesc(Long userAId, Long userBId);
 

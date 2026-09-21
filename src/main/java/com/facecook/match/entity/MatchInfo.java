@@ -48,6 +48,11 @@ public class MatchInfo {
         return new MatchInfo(firstUserId, secondUserId, matchedAt);
     }
 
+    /** 이 매칭에서 userId가 A쪽(작은 userId)인지. 당사자가 아니면 false이므로 {@link #includes}로 먼저 확인한다. */
+    public boolean isUserA(Long userId) {
+        return userAId.equals(userId);
+    }
+
     public boolean includes(Long userId) {
         return userAId.equals(userId) || userBId.equals(userId);
     }
@@ -58,13 +63,5 @@ public class MatchInfo {
 
     public LocalDateTime lastReadAt(Long userId) {
         return userAId.equals(userId) ? userALastReadAt : userBLastReadAt;
-    }
-
-    public void markRead(Long userId, LocalDateTime at) {
-        if (userAId.equals(userId)) {
-            userALastReadAt = at;
-        } else if (userBId.equals(userId)) {
-            userBLastReadAt = at;
-        }
     }
 }

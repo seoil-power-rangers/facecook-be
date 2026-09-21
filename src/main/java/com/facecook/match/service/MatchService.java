@@ -115,9 +115,12 @@ public class MatchService {
      *
      * <p>전제조건: matchId 존재, userId가 그 매칭의 당사자.</p>
      *
-     * <p>부작용: {@code MatchInfo}에서 userId 쪽 lastReadAt을 현재
-     * 시각으로 갱신한다(상대 쪽 값은 안 건드림 — 두 사람의 읽음 시각은
-     * 서로 독립적이다).</p>
+     * <p>부작용: {@code MatchInfo}에서 userId 쪽 lastReadAt만 현재 시각으로
+     * 올리는 조건부 UPDATE를 실행한다({@link MatchInfoRepository#markReadAsUserA}).
+     * 엔티티를 고쳐 저장하지 않으므로 상대 쪽 컬럼은 UPDATE 문에 들어가지 않는다 —
+     * 두 사람의 읽음 시각은 서로 독립적이고, 동시에 읽어도 서로 덮어쓰지 않는다.
+     * 기존 값이 더 나중이면(요청이 뒤바뀌어 커밋된 경우) 바꾸지 않아 시각이
+     * 뒤로 물러나지 않는다.</p>
      *
      * <p>예외: {@code NOT_FOUND}, {@code FORBIDDEN}.</p>
      *
@@ -131,7 +134,12 @@ public class MatchService {
         if (!matchInfo.includes(userId)) {
             throw new ApiException(ErrorCode.FORBIDDEN);
         }
-        matchInfo.markRead(userId, now());
+        LocalDateTime readAt = now();
+        if (matchInfo.isUserA(userId)) {
+            matchInfoRepository.markReadAsUserA(matchId, readAt);
+        } else {
+            matchInfoRepository.markReadAsUserB(matchId, readAt);
+        }
     }
 
     private MatchResponse toMatchResponse(
