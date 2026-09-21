@@ -8,6 +8,13 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.MySQLContainer;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.Duration;
+
 /**
  * 실제 MySQL 8.0 위에서 JPA·Flyway·트랜잭션 잠금을 검증하는 통합 테스트의 공통 기반.
  *
@@ -22,6 +29,10 @@ import org.testcontainers.containers.MySQLContainer;
  * <p>트랜잭션: 하위 클래스의 테스트 메서드는 바깥 트랜잭션 없이 실행된다({@code NOT_SUPPORTED}).
  * 동시성 테스트는 각 작업이 서비스의 {@code @Transactional} 경계를 그대로 타야 하고, 다른 스레드가
  * 커밋된 데이터를 읽어야 하기 때문이다. 테스트가 만든 데이터는 커밋되므로 스스로 정리한다.</p>
+ *
+ * <p>잠금 대기 확인: {@link #awaitLockWaiters}는 InnoDB가 "잠금을 기다리는 중"(LOCK WAIT)으로 보고하는
+ * 트랜잭션 수를 root 연결로 직접 조회한다. 동시성 테스트가 {@code sleep}으로 "아마 기다리고 있을 것"이라고
+ * 추측하지 않고, 두 번째 트랜잭션이 실제로 잠금에서 멈춘 것을 확인한 뒤 첫 트랜잭션을 커밋하게 한다.</p>
  *
  * @see ConcurrentRunner
  */
@@ -45,5 +56,40 @@ public abstract class MySqlIntegrationTestSupport {
         registry.add("spring.datasource.url", MYSQL::getJdbcUrl);
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
+    }
+
+    /**
+     * 잠금을 기다리는 InnoDB 트랜잭션이 {@code expected}개 이상이 될 때까지 기다린다.
+     *
+     * <p>전제조건: 기다리는 트랜잭션이 이 컨테이너의 DB에서 실행 중이다. 테스트 사용자는 다른 연결의
+     * 트랜잭션을 볼 권한(PROCESS)이 없어서 root 계정으로 별도 연결을 열어 조회한다.</p>
+     *
+     * <p>부작용: 없다(조회 전용, 매 호출마다 연결을 열고 닫는다).</p>
+     *
+     * <p>예외: 제한 시간 안에 조건이 충족되지 않으면 {@link AssertionError}.</p>
+     */
+    protected static void awaitLockWaiters(int expected, Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        try (Connection connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", MYSQL.getPassword());
+             Statement statement = connection.createStatement()) {
+            while (true) {
+                try (ResultSet rows = statement.executeQuery(
+                        "select count(*) from information_schema.innodb_trx where trx_state = 'LOCK WAIT'")) {
+                    rows.next();
+                    if (rows.getInt(1) >= expected) {
+                        return;
+                    }
+                }
+                if (System.nanoTime() > deadline) {
+                    throw new AssertionError("잠금을 기다리는 트랜잭션이 " + expected + "개 이상 되지 않았다: " + timeout);
+                }
+                Thread.sleep(20);
+            }
+        } catch (SQLException exception) {
+            throw new AssertionError("잠금 대기 상태를 조회하지 못했다", exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("잠금 대기 확인 중 인터럽트되었다", exception);
+        }
     }
 }

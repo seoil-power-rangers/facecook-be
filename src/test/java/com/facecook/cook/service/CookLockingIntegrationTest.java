@@ -44,10 +44,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 콕의 취소·거절·전송이 같은 사용자 쌍에서 겹칠 때 잠금 규약(사용자 행 → 콕 행)이 실제 MySQL에서
  * 지켜지는지 확인한다.
  *
- * <p>확인 항목: 첫 명령이 커밋하기 전에는 두 번째 명령이 잠금으로 기다리고, 커밋 뒤에는 최신 상태를 보고
- * 판정하는지(여섯 가지 경합), 실제 동시 실행에서도 승자가 하나뿐이고 교착이 없는지. 두 번째 명령은
- * 첫 명령이 커밋하기 전에 쌍 조회(일반 읽기)를 이미 마친 상태에서 잠금을 기다리므로, "잠금 전에 읽은
- * 상태로 판정하지 않는다"는 조건도 함께 검증된다.</p>
+ * <p>확인 항목: 첫 명령이 커밋하기 전에 두 번째 명령이 InnoDB 잠금 대기 상태에 들어간 것을 확인한 뒤에만
+ * 첫 명령을 커밋하고, 커밋 뒤 두 번째 명령이 최신 상태를 보고 판정하는지(여섯 가지 경합), 실제 동시
+ * 실행에서도 승자가 하나뿐이고 교착이 없는지. 취소·거절은 잠금 전에 쌍 조회(일반 읽기)를 먼저 하므로
+ * 잠금 대기에 들어간 시점에는 그 읽기가 끝나 있고, "잠금 전에 읽은 상태로 판정하지 않는다"는 조건이
+ * 함께 검증된다. 대기 여부는 {@code sleep} 추측이 아니라 DB의 LOCK WAIT 상태로 확인한다.</p>
  *
  * <p>부작용: 테스트마다 사용자 두 명과 콕·매칭 행을 커밋하고 끝나면 삭제한다. 푸시는 목으로 대체한다.
  * 사용자 ID 순서(보내는 사람이 작은 경우와 큰 경우)를 모두 돌려 잠금 순서가 방향과 무관한지 본다.</p>
@@ -242,8 +243,9 @@ class CookLockingIntegrationTest extends MySqlIntegrationTestSupport {
 
     /**
      * 첫 명령을 바깥 트랜잭션 안에서 실행해 잠금을 커밋 전까지 쥐게 한 뒤, 다른 스레드에서 두 번째 명령을 시작한다.
-     * 두 번째 명령이 커밋 전에 끝나면(잠금이 기다리게 하지 못하면) 실패시키고, 커밋 뒤에 끝난 두 번째 명령의
-     * 예외를 돌려준다(성공이면 null).
+     * 두 번째 명령이 DB에서 잠금 대기(LOCK WAIT) 상태에 들어간 것을 확인한 뒤에야 첫 명령을 커밋한다. 잠금이
+     * 기다리게 하지 못해 두 번째 명령이 커밋 전에 끝나면 실패시키고, 커밋 뒤에 끝난 두 번째 명령의 예외를
+     * 돌려준다(성공이면 null).
      */
     private Throwable firstCommitsBeforeSecond(Runnable first, Runnable second) throws Exception {
         ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -260,7 +262,7 @@ class CookLockingIntegrationTest extends MySqlIntegrationTestSupport {
                         return throwable;
                     }
                 });
-                sleep(500);
+                awaitLockWaiters(1, TIMEOUT);
                 assertThat(secondResult[0].isDone())
                         .as("두 번째 명령은 첫 명령이 커밋될 때까지 잠금으로 기다려야 한다")
                         .isFalse();
@@ -270,15 +272,6 @@ class CookLockingIntegrationTest extends MySqlIntegrationTestSupport {
             throw new AssertionError("두 번째 명령이 커밋 뒤에도 끝나지 않았다", exception);
         } finally {
             executor.shutdownNow();
-        }
-    }
-
-    private static void sleep(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(exception);
         }
     }
 
