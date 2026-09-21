@@ -63,7 +63,7 @@ docker compose up -d
 
 테스트는 `./gradlew check`로 실행한다. PR과 main 배포 전에 같은 명령이 CI에서 실행된다
 (`.github/workflows/test.yml`). 실제 MySQL이 필요한 동시성·잠금 테스트는
-`MySqlIntegrationTestSupport`를 상속하고 Testcontainers로 MySQL 8.0을 띄우므로 **Docker가 실행 중이어야
+`MySqlIntegrationTestSupport`를 상속하고 Testcontainers로 MySQL 8.4(운영 RDS와 같은 버전)를 띄우므로 **Docker가 실행 중이어야
 한다**. Docker가 없으면 건너뛰지 않고 실패한다. 동시 실행은 `ConcurrentRunner`를 쓴다.
 
 ## 6. Git 커밋 규칙
