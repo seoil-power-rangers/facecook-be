@@ -39,7 +39,7 @@ src/main/java/com/facecook/
 ├── config/     Security, WebSocket(STOMP), Redis, 세션 설정
 ├── auth/       로그인/회원가입, 세션
 ├── profile/    프로필
-├── cook/       콕 전송·취소·조회, 맞콕 시 매칭 생성
+├── cook/       콕 전송·취소·거절·조회, 맞콕 시 매칭 생성
 ├── match/      매칭 조회·상세·읽음 처리
 ├── chat/       채팅 (REST + STOMP)
 ├── mission/    미션 STEP

@@ -7,6 +7,7 @@ import com.facecook.cook.dto.SendCookRequest;
 import com.facecook.cook.entity.Cook;
 import com.facecook.cook.entity.CookStatus;
 import com.facecook.match.entity.MatchInfo;
+import com.facecook.cook.repository.CookParticipants;
 import com.facecook.cook.repository.CookRepository;
 import com.facecook.cook.repository.CookUserRepository;
 import com.facecook.match.repository.MatchInfoRepository;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -36,7 +38,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -319,15 +323,17 @@ class CookServiceTest {
 
     @Test
     void cancelRejectsMissingCook() {
-        when(cookRepository.findById(10L)).thenReturn(Optional.empty());
+        when(cookRepository.findParticipantsById(10L)).thenReturn(Optional.empty());
 
         assertErrorCode(() -> cookService.cancel(1L, 10L), ErrorCode.NOT_FOUND);
+
+        verify(cookUserRepository, never()).findAllByIdForUpdate(anyCollection());
     }
 
     @Test
     void cancelRejectsNonSender() {
         Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
-        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+        givenLockableCook(cook);
 
         assertErrorCode(() -> cookService.cancel(2L, 10L), ErrorCode.FORBIDDEN);
 
@@ -338,7 +344,7 @@ class CookServiceTest {
     void cancelRejectsAlreadyMatchedCook() {
         Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
         cook.match(20L);
-        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+        givenLockableCook(cook);
 
         assertErrorCode(() -> cookService.cancel(1L, 10L), ErrorCode.ALREADY_MATCHED);
     }
@@ -347,7 +353,7 @@ class CookServiceTest {
     void cancelRejectsAlreadyExpiredCook() {
         Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusHours(2));
         setField(cook, "status", CookStatus.EXPIRED);
-        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+        givenLockableCook(cook);
 
         assertErrorCode(() -> cookService.cancel(1L, 10L), ErrorCode.ALREADY_EXPIRED);
 
@@ -355,9 +361,20 @@ class CookServiceTest {
     }
 
     @Test
+    void cancelRejectsRejectedCookAndKeepsRejection() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        cook.reject(2L);
+        givenLockableCook(cook);
+
+        assertErrorCode(() -> cookService.cancel(1L, 10L), ErrorCode.ALREADY_REJECTED);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.REJECTED);
+    }
+
+    @Test
     void cancelAllowsOldPendingCookWithoutHourExpiry() {
         Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusHours(2));
-        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+        givenLockableCook(cook);
 
         cookService.cancel(1L, 10L);
 
@@ -367,7 +384,7 @@ class CookServiceTest {
     @Test
     void cancelMarksPendingCookAsCancelled() {
         Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
-        when(cookRepository.findById(10L)).thenReturn(Optional.of(cook));
+        givenLockableCook(cook);
 
         cookService.cancel(1L, 10L);
 
@@ -375,9 +392,203 @@ class CookServiceTest {
     }
 
     @Test
+    void cancelLocksBothUsersBeforeReadingCookForUpdate() {
+        Cook cook = cook(10L, 2L, 1L, EVENT_NOW.minusMinutes(5));
+        givenLockableCook(cook);
+
+        cookService.cancel(2L, 10L);
+
+        InOrder order = inOrder(cookRepository, cookUserRepository);
+        order.verify(cookRepository).findParticipantsById(10L);
+        order.verify(cookUserRepository).findAllByIdForUpdate(List.of(1L, 2L));
+        order.verify(cookRepository).findByIdForUpdate(10L);
+        verify(cookRepository, never()).findById(any());
+    }
+
+    @Test
+    void rejectRejectsMissingCook() {
+        when(cookRepository.findParticipantsById(10L)).thenReturn(Optional.empty());
+
+        assertErrorCode(() -> cookService.reject(2L, 10L), ErrorCode.NOT_FOUND);
+
+        verify(cookUserRepository, never()).findAllByIdForUpdate(anyCollection());
+    }
+
+    @Test
+    void rejectRejectsNonReceiver() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        givenLockableCook(cook);
+
+        assertErrorCode(() -> cookService.reject(1L, 10L), ErrorCode.FORBIDDEN);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.PENDING);
+    }
+
+    @Test
+    void rejectMarksPendingCookAsRejectedWithoutPushOrUsageRefund() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        givenLockableCook(cook);
+
+        cookService.reject(2L, 10L);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.REJECTED);
+        verifyNoInteractions(pushNotificationService);
+        verify(cookRepository, never()).countBySenderIdAndSentAtGreaterThanEqualAndSentAtLessThan(any(), any(), any());
+    }
+
+    @Test
+    void rejectingAlreadyRejectedCookSucceedsAndKeepsRejection() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        cook.reject(2L);
+        givenLockableCook(cook);
+
+        cookService.reject(2L, 10L);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.REJECTED);
+    }
+
+    @Test
+    void rejectRejectsAlreadyMatchedCook() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        cook.match(20L);
+        givenLockableCook(cook);
+
+        assertErrorCode(() -> cookService.reject(2L, 10L), ErrorCode.ALREADY_MATCHED);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.MATCHED);
+    }
+
+    @Test
+    void rejectTreatsCancelledCookAsNotFound() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        cook.cancel(1L);
+        givenLockableCook(cook);
+
+        assertErrorCode(() -> cookService.reject(2L, 10L), ErrorCode.NOT_FOUND);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.CANCELLED);
+    }
+
+    @Test
+    void rejectRejectsAlreadyExpiredCook() {
+        Cook cook = cook(10L, 1L, 2L, EVENT_NOW.minusHours(2));
+        setField(cook, "status", CookStatus.EXPIRED);
+        givenLockableCook(cook);
+
+        assertErrorCode(() -> cookService.reject(2L, 10L), ErrorCode.ALREADY_EXPIRED);
+
+        assertThat(cook.getStatus()).isEqualTo(CookStatus.EXPIRED);
+    }
+
+    @Test
+    void rejectLocksBothUsersBeforeReadingCookForUpdate() {
+        Cook cook = cook(10L, 2L, 1L, EVENT_NOW.minusMinutes(5));
+        givenLockableCook(cook);
+
+        cookService.reject(1L, 10L);
+
+        InOrder order = inOrder(cookRepository, cookUserRepository);
+        order.verify(cookRepository).findParticipantsById(10L);
+        order.verify(cookUserRepository).findAllByIdForUpdate(List.of(1L, 2L));
+        order.verify(cookRepository).findByIdForUpdate(10L);
+        verify(cookRepository, never()).findById(any());
+    }
+
+    @Test
+    void sendRejectsPersonWhoseCookIRejected() {
+        givenLockedUsers(2L, 1L);
+        Cook rejected = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(5));
+        rejected.reject(2L);
+        when(cookRepository.findBySenderIdAndReceiverId(1L, 2L)).thenReturn(Optional.of(rejected));
+
+        assertThatThrownBy(() -> cookService.send(2L, new SendCookRequest(1L)))
+                .isInstanceOfSatisfying(ApiException.class, exception -> {
+                    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.ALREADY_REJECTED);
+                    assertThat(exception.getMessage()).isEqualTo("이미 거절한 상대예요.");
+                });
+
+        verify(cookRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(pushNotificationService);
+        verify(matchInfoRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void sendChecksMatchBeforeRejectedRelationship() {
+        givenLockedUsers(2L, 1L);
+        when(matchInfoRepository.existsBetween(2L, 1L)).thenReturn(true);
+
+        assertErrorCode(() -> cookService.send(2L, new SendCookRequest(1L)), ErrorCode.ALREADY_MATCHED);
+
+        verify(cookRepository, never()).findBySenderIdAndReceiverId(any(), any());
+    }
+
+    @Test
+    void sendChecksRejectedRelationshipBeforeDuplicate() {
+        givenLockedUsers(1L, 2L);
+        Cook rejectedByOtherSide = cook(11L, 2L, 1L, EVENT_NOW.minusMinutes(5));
+        rejectedByOtherSide.reject(1L);
+        when(cookRepository.findBySenderIdAndReceiverId(2L, 1L)).thenReturn(Optional.of(rejectedByOtherSide));
+
+        assertErrorCode(() -> cookService.send(1L, new SendCookRequest(2L)), ErrorCode.ALREADY_REJECTED);
+
+        verify(cookRepository, never()).existsBySenderIdAndReceiverId(any(), any());
+    }
+
+    @Test
+    void resendingToPersonWhoRejectedMeIsDuplicate() {
+        givenLockedUsers(1L, 2L);
+        when(cookRepository.existsBySenderIdAndReceiverId(1L, 2L)).thenReturn(true);
+
+        assertErrorCode(() -> cookService.send(1L, new SendCookRequest(2L)), ErrorCode.DUPLICATE);
+
+        verify(cookRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void cancelledReverseCookDoesNotMatchAndSendsAsNewPendingCook() {
+        givenLockedUsers(1L, 2L);
+        Cook cancelledReverse = cook(10L, 2L, 1L, EVENT_NOW.minusMinutes(5));
+        cancelledReverse.cancel(2L);
+        when(cookRepository.findBySenderIdAndReceiverId(2L, 1L)).thenReturn(Optional.of(cancelledReverse));
+        when(cookRepository.saveAndFlush(any(Cook.class))).thenAnswer(invocation -> {
+            Cook saved = invocation.getArgument(0);
+            setField(saved, "id", 11L);
+            return saved;
+        });
+
+        var response = cookService.send(1L, new SendCookRequest(2L));
+
+        assertThat(response.matched()).isFalse();
+        assertThat(response.status()).isEqualTo("pending");
+        verify(matchInfoRepository, never()).saveAndFlush(any());
+        verify(pushNotificationService).cookReceived(2L);
+    }
+
+    @Test
+    void rejectedCookIsHiddenFromReceiverButListedAsRejectedForSender() {
+        Cook rejected = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(30));
+        rejected.reject(2L);
+        when(cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(1L, 1L)).thenReturn(List.of(rejected));
+        when(cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(2L, 2L)).thenReturn(List.of(rejected));
+        when(profileRepository.findAllById(anyCollection()))
+                .thenReturn(List.of(profile(1L, "one"), profile(2L, "two")));
+
+        var forSender = cookService.getCooks(1L);
+        var forReceiver = cookService.getCooks(2L);
+
+        assertThat(forSender.sent()).singleElement().satisfies(item -> {
+            assertThat(item.userId()).isEqualTo(2L);
+            assertThat(item.status()).isEqualTo("rejected");
+        });
+        assertThat(forSender.received()).isEmpty();
+        assertThat(forReceiver.sent()).isEmpty();
+        assertThat(forReceiver.received()).isEmpty();
+    }
+
+    @Test
     void cancelledCooksAreExcludedFromBothSentAndReceivedLists() {
         Cook cancelledSent = cook(10L, 1L, 2L, EVENT_NOW.minusMinutes(30));
-        cancelledSent.cancel();
+        cancelledSent.cancel(1L);
         Cook activeReceived = cook(11L, 3L, 1L, EVENT_NOW.minusMinutes(10));
         when(cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(1L, 1L))
                 .thenReturn(List.of(activeReceived, cancelledSent));
@@ -392,6 +603,25 @@ class CookServiceTest {
         assertThat(response.received()).singleElement().satisfies(item ->
                 assertThat(item.userId()).isEqualTo(3L)
         );
+    }
+
+    /** 취소·거절이 따르는 조회 순서(쌍 조회 → 사용자 잠금 → 콕 잠금 조회)에 맞춰 콕을 준비한다. */
+    private void givenLockableCook(Cook cook) {
+        Long senderId = cook.getSenderId();
+        Long receiverId = cook.getReceiverId();
+        when(cookRepository.findParticipantsById(cook.getId())).thenReturn(Optional.of(new CookParticipants() {
+            @Override
+            public Long getSenderId() {
+                return senderId;
+            }
+
+            @Override
+            public Long getReceiverId() {
+                return receiverId;
+            }
+        }));
+        givenLockedUsers(senderId, receiverId);
+        when(cookRepository.findByIdForUpdate(cook.getId())).thenReturn(Optional.of(cook));
     }
 
     private void givenLockedUsers(Long firstId, Long secondId) {

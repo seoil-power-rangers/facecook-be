@@ -1,5 +1,6 @@
 package com.facecook.cook.service;
 
+import com.facecook.auth.entity.User;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.cook.dto.CookItemResponse;
@@ -10,6 +11,7 @@ import com.facecook.cook.dto.SendCookResponse;
 import com.facecook.cook.entity.Cook;
 import com.facecook.cook.entity.CookStatus;
 import com.facecook.match.entity.MatchInfo;
+import com.facecook.cook.repository.CookParticipants;
 import com.facecook.cook.repository.CookRepository;
 import com.facecook.cook.repository.CookUserRepository;
 import com.facecook.match.repository.MatchInfoRepository;
@@ -37,10 +39,15 @@ import java.util.stream.Collectors;
 /**
  * 콕(호감 표시)의 유일한 진입점이자, 매칭이 "성사"되는 유일한 지점.
  *
- * <p>콕 전송·취소·조회를 담당한다. 매칭 성사는 이 클래스 안에서만
+ * <p>콕 전송·취소·거절·조회를 담당한다. 매칭 성사는 이 클래스 안에서만
  * 일어난다({@link #send}가 상호 콕을 감지했을 때) — 다른 클래스가
  * {@code MatchInfo}를 직접 생성하지 않는다. 성사된 매칭의 조회·읽음
  * 처리는 {@link com.facecook.match.service.MatchService}가 담당한다.</p>
+ *
+ * <p>잠금 규약: 콕의 상태를 바꾸는 {@link #send}, {@link #cancel}, {@link #reject}는 모두 같은 두 사용자
+ * 행을 작은 userId부터 먼저 잠근다. 취소·거절은 사용자 행을 잠근 뒤에야 콕을 잠금 조회로 처음 읽으므로,
+ * 같은 사용자 쌍에 대한 명령은 서로 직렬화되고 나중 명령은 먼저 커밋된 최신 상태를 보고 판정한다.
+ * 이 순서를 어기면(예: 콕을 먼저 로드) 잠금 전 상태로 판정하거나 교착이 날 수 있다.</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -74,7 +81,8 @@ public class CookService {
      * (내가 따로 "수락" API를 부를 필요가 없다 — 맞콕이면 즉시 매칭).
      *
      * <p>전제조건: senderId != receiverId, 두 유저 모두 실존, 서로 매칭된 적
-     * 없음, 아직 같은 상대에게 보낸 콕이 없음(사람당 1콕), 오늘 개인
+     * 없음, 상대가 나의 이전 콕을 거절한 적 없음, 아직 같은 상대에게 보낸 콕이
+     * 없음(사람당 1콕), 오늘 개인
      * 한도({@value #DAILY_LIMIT}개) 이내, 행사 전체 하루 한도
      * ({@link #EVENT_WIDE_DAILY_LIMITS}) 이내.</p>
      *
@@ -84,9 +92,11 @@ public class CookService {
      * 없음). 맞콕이 아니면 받는 사람에게 cookReceived 푸시만 보낸다.</p>
      *
      * <p>예외: {@code SELF}(자기 자신), {@code NOT_FOUND}(상대 없음),
-     * {@code ALREADY_MATCHED}, {@code DUPLICATE}(이미 보낸 콕 있음 — DB
+     * {@code ALREADY_MATCHED}, {@code ALREADY_REJECTED}(내가 이미 거절한 상대 —
+     * 상대의 콕이 내 거절로 REJECTED 상태), {@code DUPLICATE}(이미 보낸 콕 있음 — DB
      * unique 제약 위반도 이 코드로 변환됨), {@code DAILY_LIMIT},
-     * {@code EVENT_LIMIT}(행사 지정일에만 적용).</p>
+     * {@code EVENT_LIMIT}(행사 지정일에만 적용). 검사 순서: 자기 자신 → 상대 존재 → 매칭 →
+     * 거절한 상대 → 중복 → 개인 한도 → 행사 전체 한도.</p>
      *
      * @see #cancel(Long, Long)
      * @see #createMatch(Cook, Cook, LocalDateTime)
@@ -101,6 +111,10 @@ public class CookService {
         lockUsersAndValidateReceiver(senderId, receiverId);
         if (matchInfoRepository.existsBetween(senderId, receiverId)) {
             throw new ApiException(ErrorCode.ALREADY_MATCHED);
+        }
+        Optional<Cook> reverseCook = cookRepository.findBySenderIdAndReceiverId(receiverId, senderId);
+        if (reverseCook.filter(Cook::isRejected).isPresent()) {
+            throw new ApiException(ErrorCode.ALREADY_REJECTED, "이미 거절한 상대예요.");
         }
         if (cookRepository.existsBySenderIdAndReceiverId(senderId, receiverId)) {
             throw new ApiException(ErrorCode.DUPLICATE);
@@ -117,9 +131,6 @@ public class CookService {
             throw new ApiException(ErrorCode.DAILY_LIMIT);
         }
         enforceEventWideDailyLimit(now.toLocalDate(), today);
-
-        Optional<Cook> reverseCook = cookRepository.findBySenderIdAndReceiverId(receiverId, senderId);
-        reverseCook.ifPresent(cook -> cook.expireIfOverdue(now));
 
         Cook cook;
         try {
@@ -140,62 +151,67 @@ public class CookService {
     /**
      * userId가 자신이 보낸 콕(cookId)을 취소한다.
      *
-     * <p>전제조건: cookId 존재, userId가 그 콕의 sender, 아직 매칭·만료 상태가
-     * 아님. 만료 여부는 저장된 값이 아니라 이 호출 시점에 실시간으로 판정한다
-     * (아래 부작용 참고).</p>
+     * <p>전제조건: cookId 존재, userId가 그 콕의 sender, 매칭·만료·거절 상태가 아님. 이미 CANCELLED인
+     * 콕을 다시 취소하면 상태를 바꾸지 않고 성공한다. 콕 상태는 콕의 두 사용자 행을 잠근 뒤 잠금 조회로
+     * 읽은 값으로 판정한다(클래스 Javadoc의 잠금 규약).</p>
      *
-     * <p>부작용: 상태를 CANCELLED로 바꾼다. 또한 호출 시점 기준으로 만료
-     * 기한이 지난 콕이면 이 메서드가 먼저 EXPIRED로 갱신해버려서 취소가
-     * {@code ALREADY_EXPIRED}로 실패한다 — "취소하려던 콕이 방금 막
-     * 만료됨" 케이스를 이렇게 잡아낸다.</p>
+     * <p>부작용: 두 사용자 행과 콕 행을 잠그고, 상태를 CANCELLED로 바꾼다(저장은 트랜잭션 커밋 시
+     * 더티 체킹).</p>
      *
-     * <p>예외: {@code NOT_FOUND}, {@code FORBIDDEN}(본인 콕 아님),
-     * {@code ALREADY_MATCHED}, {@code ALREADY_EXPIRED}.</p>
+     * <p>예외: {@code NOT_FOUND}, {@code FORBIDDEN}(본인 콕 아님), {@code ALREADY_MATCHED},
+     * {@code ALREADY_EXPIRED}(레거시 EXPIRED 행), {@code ALREADY_REJECTED}. 검사 순서는
+     * {@link Cook#cancel(Long)}이 정한다.</p>
      *
-     * @see #send(Long, SendCookRequest)
+     * @see #reject(Long, Long)
+     * @see Cook#cancel(Long)
      */
     @Transactional
     public void cancel(Long userId, Long cookId) {
-        Cook cook = cookRepository.findById(cookId)
-                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
-        if (!cook.getSenderId().equals(userId)) {
-            throw new ApiException(ErrorCode.FORBIDDEN);
-        }
-
-        cook.expireIfOverdue(now());
-        if (cook.getStatus() == CookStatus.MATCHED) {
-            throw new ApiException(ErrorCode.ALREADY_MATCHED);
-        }
-        if (cook.getStatus() == CookStatus.EXPIRED) {
-            throw new ApiException(ErrorCode.ALREADY_EXPIRED);
-        }
-        cook.cancel();
+        lockCook(cookId).cancel(userId);
     }
 
     /**
-     * userId가 보낸/받은 콕 목록(취소된 콕 제외)과 오늘·누적 사용량을 함께
-     * 반환한다.
+     * userId가 자신이 받은 콕(cookId)을 거절한다.
+     *
+     * <p>전제조건: cookId 존재, userId가 그 콕의 receiver. 이미 REJECTED인 콕을 다시 거절하면 상태를
+     * 바꾸지 않고 성공한다. 이 메서드 자체는 거절 API의 활성화 여부를 확인하지 않는다 — 플래그와 요청
+     * 헤더 검사는 {@link com.facecook.cook.controller.CookController}가 한다.</p>
+     *
+     * <p>부작용: 두 사용자 행과 콕 행을 잠그고, 대기 중인 콕이면 상태를 REJECTED로 바꾼다(저장은
+     * 트랜잭션 커밋 시 더티 체킹). 푸시를 보내지 않고 보낸 사람의 오늘 사용 횟수도 돌려주지 않는다.</p>
+     *
+     * <p>예외: {@code NOT_FOUND}(없는 콕, 또는 이미 취소된 콕), {@code FORBIDDEN}(받은 사람이 아님),
+     * {@code ALREADY_MATCHED}, {@code ALREADY_EXPIRED}(레거시 EXPIRED 행). 검사 순서는
+     * {@link Cook#reject(Long)}이 정한다.</p>
+     *
+     * @see #cancel(Long, Long)
+     * @see Cook#reject(Long)
+     */
+    @Transactional
+    public void reject(Long userId, Long cookId) {
+        lockCook(cookId).reject(userId);
+    }
+
+    /**
+     * userId가 보낸/받은 콕 목록과 오늘·누적 사용량을 함께 반환한다. 취소된 콕은 양쪽 목록에서 빠지고,
+     * 거절된 콕은 거절한 사람(받은 사람)의 받은 목록에서만 빠진다. 거절당한 사람의 보낸 목록에는
+     * {@code rejected} 상태로 남는다.
      *
      * <p>전제조건: 없음.</p>
      *
-     * <p>부작용: 겉보기엔 조회 전용이지만, 목록에 포함된 콕 중 만료 기한이
-     * 지난 pending 콕이 있으면 이 호출 안에서 즉시 EXPIRED로 갱신하고 그
-     * 결과를 응답에 반영한다({@code @Transactional}이지 readOnly가 아닌
-     * 이유) — 그래서 "만료됐는데 목록엔 아직 pending으로 보이는" 상태가
-     * 생기지 않는다.</p>
+     * <p>부작용: 없다. 조회 전용 트랜잭션이다.</p>
      *
      * <p>예외 없음.</p>
      *
      * @see #send(Long, SendCookRequest)
      */
-    @Transactional
+    @Transactional(readOnly = true)
     public CookListResponse getCooks(Long userId) {
         LocalDateTime now = now();
         List<Cook> cooks = cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(userId, userId)
                 .stream()
                 .filter(cook -> cook.getStatus() != CookStatus.CANCELLED)
                 .toList();
-        cooks.forEach(cook -> cook.expireIfOverdue(now));
 
         Map<Long, ProfileResponse> profiles = profileResponses(
                 cooks.stream().map(cook -> cook.otherUserId(userId)).collect(Collectors.toSet())
@@ -206,6 +222,7 @@ public class CookService {
                 .toList();
         List<CookItemResponse> received = cooks.stream()
                 .filter(cook -> cook.getReceiverId().equals(userId))
+                .filter(cook -> !cook.isRejected())
                 .map(cook -> toCookItem(cook, userId, profiles))
                 .toList();
 
@@ -237,9 +254,30 @@ public class CookService {
         }
     }
 
+    /**
+     * 취소·거절 대상 콕을 잠금 규약 순서로 읽는다: 콕의 사용자 쌍을 엔티티 로드 없이 조회 → 두 사용자 행
+     * 잠금 → 콕을 잠금 조회. 잠금 전에 읽은 콕 상태는 판정에 쓰지 않는다.
+     *
+     * <p>전제조건: 호출한 트랜잭션에서 아직 이 콕을 로드하지 않았다(로드한 엔티티는 잠금 조회가 최신
+     * 값으로 갱신해 주지 않는다).</p>
+     *
+     * <p>예외: {@code NOT_FOUND}(콕이 없거나, 잠금을 기다리는 사이 삭제됨).</p>
+     */
+    private Cook lockCook(Long cookId) {
+        CookParticipants participants = cookRepository.findParticipantsById(cookId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+        lockUsersInOrder(participants.getSenderId(), participants.getReceiverId());
+        return cookRepository.findByIdForUpdate(cookId)
+                .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND));
+    }
+
+    private List<User> lockUsersInOrder(Long firstId, Long secondId) {
+        List<Long> userIds = List.of(Math.min(firstId, secondId), Math.max(firstId, secondId));
+        return cookUserRepository.findAllByIdForUpdate(userIds);
+    }
+
     private void lockUsersAndValidateReceiver(Long senderId, Long receiverId) {
-        List<Long> userIds = List.of(Math.min(senderId, receiverId), Math.max(senderId, receiverId));
-        boolean receiverExists = cookUserRepository.findAllByIdForUpdate(userIds).stream()
+        boolean receiverExists = lockUsersInOrder(senderId, receiverId).stream()
                 .anyMatch(user -> user.getId().equals(receiverId));
         if (!receiverExists) {
             throw new ApiException(ErrorCode.NOT_FOUND);

@@ -79,7 +79,7 @@ class MySqlIntegrationSmokeTest extends MySqlIntegrationTestSupport {
             Future<Integer> waiter = executor.submit(() -> transaction.execute(
                     status -> cookUserRepository.findAllByIdForUpdate(List.of(userId)).size()));
 
-            Thread.sleep(300);
+            awaitLockWaiters(1, TIMEOUT);
             assertThat(waiter.isDone()).as("첫 트랜잭션이 잠근 행을 두 번째가 기다려야 한다").isFalse();
 
             releaseHolder.countDown();
