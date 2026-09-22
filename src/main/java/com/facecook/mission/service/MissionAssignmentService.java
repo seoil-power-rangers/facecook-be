@@ -28,9 +28,6 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 public class MissionAssignmentService {
 
-    private static final int FIRST_STEP = 1;
-    private static final int LAST_STEP = 3;
-
     private final MatchMissionRepository matchMissionRepository;
     private final MatchMissionAssignmentRepository assignmentRepository;
     private final MissionAssignmentWriter assignmentWriter;
@@ -92,8 +89,8 @@ public class MissionAssignmentService {
             MatchMission mission,
             List<MatchMissionAssignment> assignments
     ) {
-        int firstRequiredStep = Math.max(FIRST_STEP, mission.getCurrentStep());
-        return IntStream.rangeClosed(firstRequiredStep, LAST_STEP)
+        int firstRequiredStep = Math.max(MatchMission.FIRST_STEP, mission.getCurrentStep());
+        return IntStream.rangeClosed(firstRequiredStep, MatchMission.LAST_STEP)
                 .allMatch(step -> assignments.stream()
                         .anyMatch(assignment -> assignment.getStep() == step));
     }

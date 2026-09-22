@@ -59,7 +59,7 @@ class MissionServiceTest {
         when(authorizationService.requireParticipant(10L, 2L)).thenReturn(mission);
         when(assignmentService.assignIfAbsent(10L)).thenReturn(assignments(10L));
 
-        var response = missionService.getProgress(10L, 2L);
+        var response = missionService.getProgressAndAssignIfMissing(10L, 2L);
 
         assertThat(response.matchId()).isEqualTo(10L);
         assertThat(response.currentStep()).isEqualTo(2);
@@ -71,7 +71,7 @@ class MissionServiceTest {
         when(authorizationService.requireParticipant(10L, 3L))
                 .thenThrow(new ApiException(ErrorCode.FORBIDDEN));
 
-        assertThatThrownBy(() -> missionService.getProgress(10L, 3L))
+        assertThatThrownBy(() -> missionService.getProgressAndAssignIfMissing(10L, 3L))
                 .isInstanceOfSatisfying(ApiException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
         verifyNoInteractions(assignmentService);
@@ -82,7 +82,7 @@ class MissionServiceTest {
         when(authorizationService.requireParticipant(99L, 1L))
                 .thenThrow(new ApiException(ErrorCode.NOT_FOUND, "매칭을 찾을 수 없습니다."));
 
-        assertThatThrownBy(() -> missionService.getProgress(99L, 1L))
+        assertThatThrownBy(() -> missionService.getProgressAndAssignIfMissing(99L, 1L))
                 .isInstanceOfSatisfying(ApiException.class,
                         exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.NOT_FOUND));
     }
@@ -136,7 +136,7 @@ class MissionServiceTest {
         when(authorizationService.requireParticipant(10L, 1L)).thenReturn(mission);
         when(assignmentService.assignIfAbsent(10L)).thenReturn(assignments(10L));
 
-        var response = missionService.getProgress(10L, 1L);
+        var response = missionService.getProgressAndAssignIfMissing(10L, 1L);
 
         assertThat(response.currentMission()).isEqualTo("STEP 1 미션");
         assertThat(response.toString()).doesNotContain("STEP 2 미션", "STEP 3 미션");

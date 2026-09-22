@@ -22,7 +22,7 @@ import java.util.List;
 /**
  * 매칭별 랜덤 미션(STEP 1~3)의 진행 상황 조회·완료 처리.
  *
- * <p>참가자는 자기 매칭 것만 {@link #getProgress} 조회할 수 있고, 완료
+ * <p>참가자는 자기 매칭 것만 {@link #getProgressAndAssignIfMissing} 조회할 수 있고, 완료
  * 처리({@link #completeCurrentStep})는 관리자만 한다 — 참가자가 스스로
  * "완료"를 누르는 API는 없다(운영진이 부스에서 실물로 확인한 뒤 처리).
  * 권한 검사는 참가자 쪽만 이 클래스가 직접 하고({@link
@@ -42,14 +42,13 @@ public class MissionService {
 
     /**
      * userId가 자기 매칭(matchId)의 현재 미션 진행 상황(현재 STEP, 배정된
-     * 미션 문구, STEP별 완료 시각)을 조회한다.
+     * 미션 문구, STEP별 완료 시각)을 조회한다. 이름 그대로 조회이지만, 이 매칭에
+     * 아직 배정된 미션이 없으면 이 호출 안에서 배정까지 한다({@link #ensureAssigned}).
      *
      * <p>전제조건: matchId 존재, userId가 그 매칭의 당사자.</p>
      *
-     * <p>부작용: 이 매칭에 STEP별 미션이 아직 배정 안 돼 있으면
-     * ({@link MissionAssignmentService#assignIfAbsent(Long)}) 이 호출
-     * 안에서 랜덤으로 배정해서 저장한다 — 즉 읽기 전용처럼 보이지만 최초
-     * 조회 시엔 쓰기가 일어날 수 있다(배정 자체는 매칭당 한 번만).</p>
+     * <p>부작용: STEP별 미션이 아직 배정 안 돼 있으면 랜덤으로 배정해서 저장한다
+     * (배정 자체는 매칭당 한 번만 — {@link MissionAssignmentService#assignIfAbsent(Long)}).</p>
      *
      * <p>예외: {@code NOT_FOUND}(매칭 없음), {@code FORBIDDEN}(당사자
      * 아님).</p>
@@ -57,9 +56,10 @@ public class MissionService {
      * @see #completeCurrentStep(Long, Long)
      */
     @Transactional(readOnly = true)
-    public MissionProgressResponse getProgress(Long matchId, Long userId) {
-        MatchMission mission = authorizationService.requireParticipant(matchId, userId);
-        return MissionProgressResponse.from(mission, assignmentService.assignIfAbsent(matchId));
+    public MissionProgressResponse getProgressAndAssignIfMissing(Long matchId, Long userId) {
+        MatchMission mission = requireParticipant(matchId, userId);
+        List<MatchMissionAssignment> assignments = ensureAssigned(matchId);
+        return buildParticipantResponse(mission, assignments);
     }
 
     /**
@@ -69,7 +69,7 @@ public class MissionService {
      * <p>전제조건: 호출자가 관리자임은 컨트롤러 계층에서 이미 검증됐다고
      * 전제한다 — 이 메서드 자체는 권한을 확인하지 않는다.</p>
      *
-     * <p>부작용: {@link #getProgress}와 마찬가지로 매칭마다 미션 배정이
+     * <p>부작용: {@link #getProgressAndAssignIfMissing}과 마찬가지로 매칭마다 미션 배정이
      * 없으면 이 호출 중에 배정한다. 한 가지 다른 점: 배정 중 어떤 매칭에서
      * 예외가 나도 전체 목록이 실패하지 않는다 — 그 매칭만 목록에서 빠지고
      * 에러 로그만 남는다({@link #toAdminProgressOrNull}). 관리자 화면이
@@ -106,7 +106,7 @@ public class MissionService {
      * <p>예외: {@code NOT_FOUND}(매칭 없음), {@code VALIDATION}(이미
      * 전체 완료된 매칭).</p>
      *
-     * @see #getProgress(Long, Long)
+     * @see #getProgressAndAssignIfMissing(Long, Long)
      * @see com.facecook.mission.event.MissionProgressCommittedListener
      */
     @Transactional
@@ -118,6 +118,23 @@ public class MissionService {
         MissionProgressResponse participantProgress = MissionProgressResponse.from(mission, assignments);
         eventPublisher.publishEvent(new MissionProgressCommittedEvent(participantProgress));
         return AdminMissionProgressResponse.from(mission, assignments);
+    }
+
+    /** userId가 matchId의 당사자인지 확인하고 {@code MatchMission}을 돌려준다. */
+    private MatchMission requireParticipant(Long matchId, Long userId) {
+        return authorizationService.requireParticipant(matchId, userId);
+    }
+
+    /** matchId에 STEP별 미션이 이미 배정돼 있으면 그대로, 없으면 이 호출 안에서 랜덤 배정한다. */
+    private List<MatchMissionAssignment> ensureAssigned(Long matchId) {
+        return assignmentService.assignIfAbsent(matchId);
+    }
+
+    private MissionProgressResponse buildParticipantResponse(
+            MatchMission mission,
+            List<MatchMissionAssignment> assignments
+    ) {
+        return MissionProgressResponse.from(mission, assignments);
     }
 
     private AdminMissionProgressResponse toAdminProgressOrNull(MatchMission mission) {

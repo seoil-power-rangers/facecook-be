@@ -17,7 +17,13 @@ import java.time.LocalDateTime;
 @Table(name = "match_info")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MatchMission {
+    /** 미션 배정·완료가 다루는 첫 STEP. */
+    public static final int FIRST_STEP = 1;
+    /** currentStep이 이 값이면 완료 처리 대상 STEP이 없다(모든 STEP을 마쳤다). */
     public static final int COMPLETED_STEP = 4;
+    /** 배정·완료가 다루는 마지막 STEP. {@link #COMPLETED_STEP}의 정의를 그대로 따른다 — 3단계를
+     * 늘리려면 이 관계 하나만 알면 된다. */
+    public static final int LAST_STEP = COMPLETED_STEP - 1;
 
     @Id
     @Column(name = "match_id")

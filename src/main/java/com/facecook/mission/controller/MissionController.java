@@ -22,6 +22,6 @@ public class MissionController {
             @PathVariable Long matchId,
             @CurrentUser AuthenticatedUser currentUser
     ) {
-        return ResponseEntity.ok(missionService.getProgress(matchId, currentUser.userId()));
+        return ResponseEntity.ok(missionService.getProgressAndAssignIfMissing(matchId, currentUser.userId()));
     }
 }
