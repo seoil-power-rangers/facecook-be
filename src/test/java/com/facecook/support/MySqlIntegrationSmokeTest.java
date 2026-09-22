@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * MySQL 통합 테스트 기반이 동시성 테스트에 필요한 조건을 실제로 갖췄는지 확인한다.
  *
- * <p>확인 항목: 운영과 같은 Flyway 마이그레이션이 적용되고 Hibernate {@code validate}가 통과하는지,
+ * <p>확인 항목: 운영과 같은 MySQL 버전(8.4)이고 같은 Flyway 마이그레이션이 적용되고 Hibernate {@code validate}가 통과하는지,
  * 격리 수준이 운영과 같은 REPEATABLE-READ인지, 행 잠금이 다른 트랜잭션을 실제로 기다리게 하는지,
  * {@link ConcurrentRunner}가 성공과 예외를 모두 회수하는지.</p>
  *
@@ -57,8 +57,12 @@ class MySqlIntegrationSmokeTest extends MySqlIntegrationTestSupport {
                 "select count(*) from flyway_schema_history where success = 1", Integer.class);
         String isolation = jdbcTemplate.queryForObject("select @@transaction_isolation", String.class);
 
+        String version = jdbcTemplate.queryForObject("select version()", String.class);
+
         assertThat(applied).isGreaterThanOrEqualTo(4);
         assertThat(isolation).isEqualTo("REPEATABLE-READ");
+        // 운영 RDS(MySQL 8.4)와 같은 버전에서 검증하고 있는지 고정한다. 이미지를 바꾸면 여기서 알아챈다.
+        assertThat(version).startsWith("8.4");
     }
 
     @Test

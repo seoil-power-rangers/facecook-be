@@ -199,19 +199,41 @@ class MatchServiceTest {
 
         assertErrorCode(() -> matchService.markRead(3L, 20L), ErrorCode.FORBIDDEN);
 
-        assertThat(match.lastReadAt(1L)).isNull();
-        assertThat(match.lastReadAt(2L)).isNull();
+        verify(matchInfoRepository, never()).markReadAsUserA(any(), any());
+        verify(matchInfoRepository, never()).markReadAsUserB(any(), any());
     }
 
     @Test
-    void markReadUpdatesLastReadTimeForParticipant() {
+    void markReadRaisesOnlyTheCallersOwnLastReadTime() {
         MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
         when(matchInfoRepository.findById(20L)).thenReturn(Optional.of(match));
 
         matchService.markRead(1L, 20L);
 
-        assertThat(match.lastReadAt(1L)).isEqualTo(EVENT_NOW);
-        assertThat(match.lastReadAt(2L)).isNull();
+        verify(matchInfoRepository).markReadAsUserA(20L, EVENT_NOW);
+        verify(matchInfoRepository, never()).markReadAsUserB(any(), any());
+    }
+
+    @Test
+    void markReadUsesTheBSideUpdateForTheLargerUserId() {
+        MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
+        when(matchInfoRepository.findById(20L)).thenReturn(Optional.of(match));
+
+        matchService.markRead(2L, 20L);
+
+        verify(matchInfoRepository).markReadAsUserB(20L, EVENT_NOW);
+        verify(matchInfoRepository, never()).markReadAsUserA(any(), any());
+    }
+
+    @Test
+    void markReadDoesNotSaveTheEntityBecauseThatWouldRewriteTheOtherColumn() {
+        MatchInfo match = match(20L, 1L, 2L, EVENT_NOW.minusMinutes(10));
+        when(matchInfoRepository.findById(20L)).thenReturn(Optional.of(match));
+
+        matchService.markRead(1L, 20L);
+
+        verify(matchInfoRepository, never()).save(any());
+        verify(matchInfoRepository, never()).saveAndFlush(any());
     }
 
     private static MatchInfo match(Long id, Long firstUserId, Long secondUserId, LocalDateTime matchedAt) {

@@ -26,7 +26,7 @@ Docker Compose가 MySQL 8.0 · Redis 7을 로컬에 띄웁니다. 실행 시 Fly
 ## 기술 스택
 
 - Java 21, Spring Boot, Gradle(Groovy DSL)
-- MySQL 8.0(RDS), Redis 7(ElastiCache) — 실시간 채팅용 Pub/Sub
+- MySQL 8.4(RDS), Redis 7(ElastiCache) — 실시간 채팅용 Pub/Sub
 - WebSocket(STOMP) — 채팅 실시간 처리
 - Flyway — DB 스키마 버전 관리
 

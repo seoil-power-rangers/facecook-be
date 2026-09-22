@@ -27,7 +27,7 @@ import java.util.concurrent.TimeoutException;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 실제 MySQL 8.0 위에서 JPA·Flyway·트랜잭션 잠금을 검증하는 통합 테스트의 공통 기반.
+ * 실제 MySQL 8.4(운영 RDS와 같은 메이저·마이너 버전) 위에서 JPA·Flyway·트랜잭션 잠금을 검증하는 통합 테스트의 공통 기반.
  *
  * <p>전제조건: Docker가 실행 중이어야 한다. Docker가 없으면 컨테이너 기동에서 실패하고, 테스트를
  * 건너뛰지 않는다. 잠금·격리 수준을 검증하는 테스트가 조용히 빠진 채 통과하는 것을 막기 위해서다.</p>
@@ -58,7 +58,7 @@ public abstract class MySqlIntegrationTestSupport {
     // 교착·잠금 누락을 잡기 위한 상한이라 넉넉하게 둔다. 컴파일과 컨테이너 기동이 겹친 첫 실행에서도 정상 대기가 이 안에 끝난다.
     private static final Duration LOCK_WAIT_TIMEOUT = Duration.ofSeconds(30);
 
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4")
             .withDatabaseName("facecook")
             .withUsername("facecook")
             .withPassword("test-password")
