@@ -31,7 +31,8 @@ public enum ErrorCode {
     CLOSED(HttpStatus.FORBIDDEN, "채팅 운영시간이 아닙니다."),
     REPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "신고를 찾을 수 없습니다."),
     REPORT_ALREADY_REVIEWED(HttpStatus.CONFLICT, "이미 처리된 신고입니다."),
-    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다.");
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다."),
+    MISSION_STEP_MISMATCH(HttpStatus.CONFLICT, "확인한 STEP이 이미 처리됐습니다.");
 
     private final HttpStatus status;
     private final String message;
