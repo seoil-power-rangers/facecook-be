@@ -86,14 +86,14 @@ public class MissionAssignmentWriter {
     private Long randomBundleId() {
         List<Long> bundleIds = templateRepository.findDistinctBundleIds();
         if (bundleIds.isEmpty()) {
-            throw new IllegalStateException("미션 묶음이 없습니다.");
+            throw new MissionTemplateNotFoundException("미션 묶음이 없습니다.");
         }
         return bundleIds.get(ThreadLocalRandom.current().nextInt(bundleIds.size()));
     }
 
     private MissionTemplate templateForBundleStep(Long bundleId, int step) {
         return templateRepository.findByBundleIdAndStep(bundleId, step)
-                .orElseThrow(() -> new IllegalStateException(
+                .orElseThrow(() -> new MissionTemplateNotFoundException(
                         "묶음 " + bundleId + "의 STEP " + step + " 미션 템플릿이 없습니다."));
     }
 }

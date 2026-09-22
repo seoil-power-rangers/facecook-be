@@ -93,7 +93,7 @@ class MissionServiceTest {
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
         when(assignmentService.assignIfAbsent(mission)).thenReturn(assignments(10L));
 
-        var response = missionService.completeCurrentStep(10L, 7L);
+        var response = missionService.completeCurrentStep(10L, 7L, 1);
 
         assertThat(response.currentStep()).isEqualTo(2);
         assertThat(response.step1CompletedAt()).isEqualTo(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
@@ -105,16 +105,29 @@ class MissionServiceTest {
     }
 
     @Test
-    void rejectsCompletingAnAlreadyCompletedMission() {
+    void rejectsStaleExpectedStepAndRecordsNothing() {
+        MatchMission mission = mission(10L, 1L, 2L, 2);
+        when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
+        when(assignmentService.assignIfAbsent(mission)).thenReturn(assignments(10L));
+
+        assertThatThrownBy(() -> missionService.completeCurrentStep(10L, 7L, 1))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.MISSION_STEP_MISMATCH));
+        assertThat(mission.getCurrentStep()).isEqualTo(2);
+        assertThat(mission.getStep1CompletedAt()).isNull();
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void rejectsCompletingAnAlreadyFullyCompletedMission() {
         MatchMission mission = mission(10L, 1L, 2L, 4);
         when(repository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
         when(assignmentService.assignIfAbsent(mission)).thenReturn(assignments(10L));
 
-        assertThatThrownBy(() -> missionService.completeCurrentStep(10L, 7L))
-                .isInstanceOfSatisfying(ApiException.class, exception -> {
-                    assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION);
-                    assertThat(exception.getMessage()).contains("이미 모든 STEP");
-                });
+        assertThatThrownBy(() -> missionService.completeCurrentStep(10L, 7L, 3))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.MISSION_STEP_MISMATCH));
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -128,6 +141,52 @@ class MissionServiceTest {
         assertThat(responses).hasSize(1);
         verify(repository).findAll(sortCaptor.getValue());
         assertThat(sortCaptor.getValue().getOrderFor("matchedAt").getDirection()).isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
+    void listWithExclusionsClassifiesTemplateFailureAsNoTemplate() {
+        MatchMission broken = mission(10L, 1L, 2L, 1);
+        MatchMission healthy = mission(20L, 3L, 4L, 1);
+        when(repository.findAll(org.mockito.ArgumentMatchers.any(Sort.class)))
+                .thenReturn(List.of(broken, healthy));
+        when(assignmentService.assignIfAbsent(10L))
+                .thenThrow(new MissionTemplateNotFoundException("템플릿 없음"));
+        when(assignmentService.assignIfAbsent(20L)).thenReturn(assignments(20L));
+
+        var response = missionService.getAllProgressWithExclusions();
+
+        assertThat(response.items()).extracting(AdminMissionProgressResponse::matchId).containsExactly(20L);
+        assertThat(response.excluded()).hasSize(1);
+        assertThat(response.excluded().get(0).matchId()).isEqualTo(10L);
+        assertThat(response.excluded().get(0).reason()).isEqualTo("NO_TEMPLATE");
+    }
+
+    @Test
+    void listWithExclusionsClassifiesOtherFailuresAsUnknown() {
+        MatchMission broken = mission(10L, 1L, 2L, 1);
+        when(repository.findAll(org.mockito.ArgumentMatchers.any(Sort.class))).thenReturn(List.of(broken));
+        when(assignmentService.assignIfAbsent(10L)).thenThrow(new RuntimeException("예상 못 한 오류"));
+
+        var response = missionService.getAllProgressWithExclusions();
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.excluded()).hasSize(1);
+        assertThat(response.excluded().get(0).reason()).isEqualTo("UNKNOWN");
+    }
+
+    @Test
+    void listWithExclusionsDoesNotMisclassifyUnrelatedIllegalStateExceptionAsNoTemplate() {
+        // 배정 경로에서 나는 IllegalStateException이 전부 템플릿 누락은 아니다(예: 락·트랜잭션
+        // 상태 오류). MissionTemplateNotFoundException 타입만 NO_TEMPLATE으로 분류해야 한다.
+        MatchMission broken = mission(10L, 1L, 2L, 1);
+        when(repository.findAll(org.mockito.ArgumentMatchers.any(Sort.class))).thenReturn(List.of(broken));
+        when(assignmentService.assignIfAbsent(10L))
+                .thenThrow(new IllegalStateException("템플릿과 무관한 상태 오류"));
+
+        var response = missionService.getAllProgressWithExclusions();
+
+        assertThat(response.excluded()).hasSize(1);
+        assertThat(response.excluded().get(0).reason()).isEqualTo("UNKNOWN");
     }
 
     @Test

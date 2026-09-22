@@ -63,7 +63,21 @@ public class MatchMission {
         return userAId.equals(userId) || userBId.equals(userId);
     }
 
-    public void completeCurrentStep(Long adminId, LocalDateTime completedAt) {
+    /**
+     * 관리자가 화면에서 확인한 STEP({@code expectedStep})을 완료 처리한다.
+     *
+     * <p>전제조건: 호출자가 이 행을 이미 잠갔다(동시 완료 처리 방지).</p>
+     *
+     * <p>예외: {@code expectedStep}이 서버의 현재 {@code currentStep}과 다르면
+     * {@link ErrorCode#MISSION_STEP_MISMATCH}(409)를 던진다 — 이미 완료 처리된
+     * STEP을 다시 요청한 경우(다른 관리자가 먼저 처리했거나 재시도로 중복
+     * 요청된 경우)도, 아직 배정 전인 매칭을 완료 요청한 경우도 이 하나로
+     * 응답한다. 누가 먼저 처리했는지는 구별하지 않는다.</p>
+     */
+    public void completeCurrentStep(Long adminId, LocalDateTime completedAt, int expectedStep) {
+        if (currentStep != expectedStep) {
+            throw new ApiException(ErrorCode.MISSION_STEP_MISMATCH);
+        }
         switch (currentStep) {
             case 1 -> {
                 step1CompletedAt = completedAt;
@@ -77,7 +91,6 @@ public class MatchMission {
                 step3CompletedAt = completedAt;
                 step3CompletedBy = adminId;
             }
-            case COMPLETED_STEP -> throw new ApiException(ErrorCode.VALIDATION, "이미 모든 STEP을 완료했습니다.");
             default -> throw new IllegalStateException("지원하지 않는 미션 STEP입니다: " + currentStep);
         }
         currentStep++;

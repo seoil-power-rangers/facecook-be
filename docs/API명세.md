@@ -203,7 +203,7 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
 | --- | --- | --- | --- |
 | GET | `/api/matches/{matchId}/mission` | 미션 진행상황 조회 (`currentStep`, `currentMission`, STEP별 완료시각) | 참가자(해당 매칭 당사자만) |
 | GET | `/api/admin/missions` | 전체 매칭의 미션 진행 현황 목록(STEP별 배정 미션 포함) | 관리자 |
-| POST | `/api/admin/missions/{matchId}/complete` | 현재 STEP 완료 처리 → 다음 STEP 공개 | 관리자 |
+| POST | `/api/admin/missions/{matchId}/complete` | `expectedStep` STEP 완료 처리 → 다음 STEP 공개 (body: `{ expectedStep }`) | 관리자 |
 
 참가자 미션 진행 응답(`GET /api/matches/{matchId}/mission` 및 미션 WebSocket 이벤트):
 
@@ -248,6 +248,17 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
   기능 배포 전에 이미 완료되어 실제 배정 기록이 없는 STEP은 `null`일 수 있다.
 - 관리자 목록은 한 매칭의 배정 데이터 처리에 실패해도 나머지 정상 매칭을 반환하며,
   문제가 있는 매칭은 목록에서 제외하고 서버 로그에 남긴다.
+- `GET /api/admin/missions?includeExcluded=true`로 요청하면 위 배열 대신
+  `{ "items": [...], "excluded": [...] }` 객체를 돌려준다. `excluded`는
+  목록에서 제외된 매칭이다(`{ "matchId": 10, "reason": "NO_TEMPLATE" }`).
+  `reason`은 `NO_TEMPLATE`(배정할 미션 묶음·템플릿을 찾지 못함) 또는
+  `UNKNOWN`(그 밖의 예상 외 오류) 중 하나다. 파라미터 없이 요청하면(구 FE
+  호환) 지금처럼 배열만 돌려준다.
+- `POST /api/admin/missions/{matchId}/complete`의 `expectedStep`은 관리자가
+  화면에서 확인한 STEP 번호(1~3)다. 서버의 현재 STEP과 다르면(이미 다른
+  관리자가 처리했거나, 재시도로 중복 요청됐거나, 전체 완료된 경우 포함)
+  `409 MISSION_STEP_MISMATCH`를 반환하고 아무것도 기록하지 않는다.
+  `expectedStep`을 누락하거나 범위(1~3) 밖이면 `400 VALIDATION`이다.
 
 ## 6. 신고
 
