@@ -24,9 +24,6 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 public class MissionAssignmentWriter {
 
-    private static final int FIRST_STEP = 1;
-    private static final int LAST_STEP = 3;
-
     private final MatchMissionRepository matchMissionRepository;
     private final MatchMissionAssignmentRepository assignmentRepository;
     private final MissionTemplateRepository templateRepository;
@@ -48,8 +45,8 @@ public class MissionAssignmentWriter {
         List<MatchMissionAssignment> assignments = new ArrayList<>(
                 assignmentRepository.findAllByMatchIdOrderByStep(mission.getMatchId())
         );
-        int firstAssignableStep = Math.max(FIRST_STEP, mission.getCurrentStep());
-        for (int step = firstAssignableStep; step <= LAST_STEP; step++) {
+        int firstAssignableStep = Math.max(MatchMission.FIRST_STEP, mission.getCurrentStep());
+        for (int step = firstAssignableStep; step <= MatchMission.LAST_STEP; step++) {
             int targetStep = step;
             if (assignments.stream().noneMatch(assignment -> assignment.getStep() == targetStep)) {
                 MissionTemplate template = randomTemplate(step);
