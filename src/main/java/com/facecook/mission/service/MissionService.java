@@ -124,13 +124,14 @@ public class MissionService {
     }
 
     /**
-     * {@link IllegalStateException}은 {@link
-     * com.facecook.mission.service.MissionAssignmentWriter}가 배정할 묶음·템플릿을
-     * 찾지 못했을 때만 던진다 — {@code NO_TEMPLATE}으로 분류한다. 그 밖의 예상 외
-     * 예외는 전부 {@code UNKNOWN}이다.
+     * {@link MissionTemplateNotFoundException}만 {@code NO_TEMPLATE}으로 분류한다 —
+     * 배정할 묶음·템플릿을 못 찾은 경우로 좁혀서 판단한다. 락·트랜잭션 상태 오류 같은
+     * 다른 종류의 {@code IllegalStateException}까지 템플릿 누락으로 잘못 안내하지
+     * 않기 위해 상위 타입이 아니라 이 전용 예외 타입만 본다. 그 밖의 예상 외 예외는
+     * 전부 {@code UNKNOWN}이다.
      */
     private static String exclusionReason(RuntimeException exception) {
-        return exception instanceof IllegalStateException ? "NO_TEMPLATE" : "UNKNOWN";
+        return exception instanceof MissionTemplateNotFoundException ? "NO_TEMPLATE" : "UNKNOWN";
     }
 
     /**

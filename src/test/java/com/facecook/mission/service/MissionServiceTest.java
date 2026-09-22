@@ -149,7 +149,8 @@ class MissionServiceTest {
         MatchMission healthy = mission(20L, 3L, 4L, 1);
         when(repository.findAll(org.mockito.ArgumentMatchers.any(Sort.class)))
                 .thenReturn(List.of(broken, healthy));
-        when(assignmentService.assignIfAbsent(10L)).thenThrow(new IllegalStateException("템플릿 없음"));
+        when(assignmentService.assignIfAbsent(10L))
+                .thenThrow(new MissionTemplateNotFoundException("템플릿 없음"));
         when(assignmentService.assignIfAbsent(20L)).thenReturn(assignments(20L));
 
         var response = missionService.getAllProgressWithExclusions();
@@ -169,6 +170,21 @@ class MissionServiceTest {
         var response = missionService.getAllProgressWithExclusions();
 
         assertThat(response.items()).isEmpty();
+        assertThat(response.excluded()).hasSize(1);
+        assertThat(response.excluded().get(0).reason()).isEqualTo("UNKNOWN");
+    }
+
+    @Test
+    void listWithExclusionsDoesNotMisclassifyUnrelatedIllegalStateExceptionAsNoTemplate() {
+        // 배정 경로에서 나는 IllegalStateException이 전부 템플릿 누락은 아니다(예: 락·트랜잭션
+        // 상태 오류). MissionTemplateNotFoundException 타입만 NO_TEMPLATE으로 분류해야 한다.
+        MatchMission broken = mission(10L, 1L, 2L, 1);
+        when(repository.findAll(org.mockito.ArgumentMatchers.any(Sort.class))).thenReturn(List.of(broken));
+        when(assignmentService.assignIfAbsent(10L))
+                .thenThrow(new IllegalStateException("템플릿과 무관한 상태 오류"));
+
+        var response = missionService.getAllProgressWithExclusions();
+
         assertThat(response.excluded()).hasSize(1);
         assertThat(response.excluded().get(0).reason()).isEqualTo("UNKNOWN");
     }
