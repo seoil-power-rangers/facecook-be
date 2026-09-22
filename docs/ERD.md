@@ -380,6 +380,21 @@ CREATE TABLE event_limit_lock (
 INSERT INTO event_limit_lock (lock_id) VALUES (1);
 ```
 
+`V6__replace_mission_templates_with_bundles.sql`은 미션 템플릿을 묶음(bundle) 구조로 교체한다. 기존
+STEP1 82개·STEP2 49개·STEP3 19개가 독립 풀이던 것을, 행 하나가 STEP1~3 한 세트인 82묶음(246행)으로 바꾼다.
+기존 `match_mission_assignment`(마이그레이션 전 데이터)와 `mission_template`을 모두 지우고 새로 채운다
+(행사 전 데이터 초기화와 맞물려 있어 호환을 고려하지 않는다).
+
+```sql
+ALTER TABLE mission_template
+    ADD COLUMN bundle_id BIGINT NOT NULL AFTER mission_template_id;
+ALTER TABLE mission_template
+    ADD CONSTRAINT uq_mission_template_bundle_step UNIQUE (bundle_id, step);
+```
+
+`MissionAssignmentWriter`는 매칭 하나에 묶음 하나를 통째로 배정한다: 이미 배정된 STEP이 있으면 그 묶음을,
+없으면 묶음을 무작위로 골라 STEP1~3을 같은 묶음에서 채운다.
+
 ## 6. 이번 문서 범위 밖
 
 - 관리자 계정을 `users`에 실제로 둘지 여부 — 로그인 설계 담당과 별도 합의 필요

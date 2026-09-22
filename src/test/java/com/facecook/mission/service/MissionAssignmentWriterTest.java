@@ -19,6 +19,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -47,33 +48,53 @@ class MissionAssignmentWriterTest {
     }
 
     @Test
+    void picksANewRandomBundleWhenNothingIsAssignedYetAndFillsAllStepsFromIt() {
+        MatchMission mission = match(10L, 1);
+        when(matchRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
+        when(assignmentRepository.findAllByMatchIdOrderByStep(10L)).thenReturn(List.of());
+        when(templateRepository.findDistinctBundleIds()).thenReturn(List.of(7L));
+        when(templateRepository.findByBundleIdAndStep(7L, 1)).thenReturn(Optional.of(template(7L, 1, "one")));
+        when(templateRepository.findByBundleIdAndStep(7L, 2)).thenReturn(Optional.of(template(7L, 2, "two")));
+        when(templateRepository.findByBundleIdAndStep(7L, 3)).thenReturn(Optional.of(template(7L, 3, "three")));
+
+        var assignments = writer.assignWithLock(10L);
+
+        assertThat(assignments).extracting(MatchMissionAssignment::getStep).containsExactly(1, 2, 3);
+        assertThat(assignments).extracting(a -> a.getTemplate().getBundleId()).containsOnly(7L);
+        verify(assignmentRepository, times(3)).save(any());
+    }
+
+    @Test
     void assignsOnlyCurrentAndFutureStepsAfterLocking() {
         MatchMission mission = match(10L, 2);
         when(matchRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
         when(assignmentRepository.findAllByMatchIdOrderByStep(10L)).thenReturn(List.of());
-        when(templateRepository.findAllByStep(2)).thenReturn(List.of(template(2, "two")));
-        when(templateRepository.findAllByStep(3)).thenReturn(List.of(template(3, "three")));
+        when(templateRepository.findDistinctBundleIds()).thenReturn(List.of(5L));
+        when(templateRepository.findByBundleIdAndStep(5L, 2)).thenReturn(Optional.of(template(5L, 2, "two")));
+        when(templateRepository.findByBundleIdAndStep(5L, 3)).thenReturn(Optional.of(template(5L, 3, "three")));
 
         var assignments = writer.assignWithLock(10L);
 
         assertThat(assignments).extracting(MatchMissionAssignment::getStep).containsExactly(2, 3);
-        verify(templateRepository, never()).findAllByStep(1);
+        verify(templateRepository, never()).findByBundleIdAndStep(anyLong(), org.mockito.ArgumentMatchers.eq(1));
         verify(assignmentRepository, times(2)).save(any());
     }
 
     @Test
-    void rechecksAssignmentsUnderLockAndFillsOnlyStillMissingSteps() {
+    void reusesTheAlreadyAssignedStepsBundleInsteadOfPickingANewOne() {
         MatchMission mission = match(10L, 1);
-        MatchMissionAssignment existing = assignment(10L, 1, "existing");
+        MatchMissionAssignment existing = assignment(10L, 1, template(9L, 1, "existing"));
         when(matchRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
         when(assignmentRepository.findAllByMatchIdOrderByStep(10L)).thenReturn(List.of(existing));
-        when(templateRepository.findAllByStep(2)).thenReturn(List.of(template(2, "two")));
-        when(templateRepository.findAllByStep(3)).thenReturn(List.of(template(3, "three")));
+        when(templateRepository.findByBundleIdAndStep(9L, 2)).thenReturn(Optional.of(template(9L, 2, "two")));
+        when(templateRepository.findByBundleIdAndStep(9L, 3)).thenReturn(Optional.of(template(9L, 3, "three")));
 
         var assignments = writer.assignWithLock(10L);
 
         assertThat(assignments).hasSize(3);
         assertThat(assignments.getFirst()).isSameAs(existing);
+        assertThat(assignments).extracting(a -> a.getTemplate().getBundleId()).containsOnly(9L, 9L, 9L);
+        verify(templateRepository, never()).findDistinctBundleIds();
         verify(assignmentRepository, times(2)).save(any());
     }
 
@@ -85,8 +106,20 @@ class MissionAssignmentWriterTest {
 
         assertThat(writer.assignWithLock(10L)).isEmpty();
 
-        verify(templateRepository, never()).findAllByStep(anyInt());
+        verify(templateRepository, never()).findDistinctBundleIds();
+        verify(templateRepository, never()).findByBundleIdAndStep(anyLong(), anyInt());
         verify(assignmentRepository, never()).save(any());
+    }
+
+    @Test
+    void failsFastWhenNoBundleExists() {
+        MatchMission mission = match(10L, 1);
+        when(matchRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(mission));
+        when(assignmentRepository.findAllByMatchIdOrderByStep(10L)).thenReturn(List.of());
+        when(templateRepository.findDistinctBundleIds()).thenReturn(List.of());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> writer.assignWithLock(10L))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private static MatchMission match(Long id, int currentStep) {
@@ -96,18 +129,19 @@ class MissionAssignmentWriterTest {
         return match;
     }
 
-    private static MissionTemplate template(int step, String content) {
+    private static MissionTemplate template(Long bundleId, int step, String content) {
         MissionTemplate template = newInstance(MissionTemplate.class);
+        setField(template, "bundleId", bundleId);
         setField(template, "step", step);
         setField(template, "content", content);
         return template;
     }
 
-    private static MatchMissionAssignment assignment(Long matchId, int step, String content) {
+    private static MatchMissionAssignment assignment(Long matchId, int step, MissionTemplate template) {
         MatchMissionAssignment assignment = newInstance(MatchMissionAssignment.class);
         setField(assignment, "matchId", matchId);
         setField(assignment, "step", step);
-        setField(assignment, "template", template(step, content));
+        setField(assignment, "template", template);
         return assignment;
     }
 
