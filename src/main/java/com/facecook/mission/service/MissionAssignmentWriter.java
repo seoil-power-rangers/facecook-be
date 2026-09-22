@@ -41,15 +41,26 @@ public class MissionAssignmentWriter {
         return assignMissing(mission);
     }
 
+    /**
+     * 매칭에 모자란 STEP의 미션을 채운다. STEP1~3은 같은 묶음(bundle)에서만 나온다 — 이미 배정된
+     * STEP이 있으면 그 템플릿의 묶음을 그대로 쓰고, 하나도 없으면 새 묶음을 무작위로 고른다. 새 매칭은
+     * STEP1~3이 이 호출 한 번에 같이 채워지므로(currentStep이 1에서 시작) 보통은 항상 새 묶음을 고르는
+     * 경로를 탄다 — 이미 배정된 일부만 남은 상태에서 나머지를 채우는 경우에도 같은 묶음이 유지된다.
+     */
     private List<MatchMissionAssignment> assignMissing(MatchMission mission) {
         List<MatchMissionAssignment> assignments = new ArrayList<>(
                 assignmentRepository.findAllByMatchIdOrderByStep(mission.getMatchId())
         );
         int firstAssignableStep = Math.max(MatchMission.FIRST_STEP, mission.getCurrentStep());
+        if (firstAssignableStep > MatchMission.LAST_STEP) {
+            return List.copyOf(assignments);
+        }
+
+        Long bundleId = resolveBundleId(assignments);
         for (int step = firstAssignableStep; step <= MatchMission.LAST_STEP; step++) {
             int targetStep = step;
             if (assignments.stream().noneMatch(assignment -> assignment.getStep() == targetStep)) {
-                MissionTemplate template = randomTemplate(step);
+                MissionTemplate template = templateForBundleStep(bundleId, step);
                 assignments.add(assignmentRepository.save(
                         MatchMissionAssignment.assign(
                                 mission.getMatchId(),
@@ -64,11 +75,25 @@ public class MissionAssignmentWriter {
         return List.copyOf(assignments);
     }
 
-    private MissionTemplate randomTemplate(int step) {
-        List<MissionTemplate> templates = templateRepository.findAllByStep(step);
-        if (templates.isEmpty()) {
-            throw new IllegalStateException("STEP " + step + " 미션 템플릿이 없습니다.");
+    /** 이미 배정된 STEP이 있으면 그 묶음을, 없으면 새 묶음을 무작위로 고른다. */
+    private Long resolveBundleId(List<MatchMissionAssignment> existingAssignments) {
+        return existingAssignments.stream()
+                .findFirst()
+                .map(assignment -> assignment.getTemplate().getBundleId())
+                .orElseGet(this::randomBundleId);
+    }
+
+    private Long randomBundleId() {
+        List<Long> bundleIds = templateRepository.findDistinctBundleIds();
+        if (bundleIds.isEmpty()) {
+            throw new IllegalStateException("미션 묶음이 없습니다.");
         }
-        return templates.get(ThreadLocalRandom.current().nextInt(templates.size()));
+        return bundleIds.get(ThreadLocalRandom.current().nextInt(bundleIds.size()));
+    }
+
+    private MissionTemplate templateForBundleStep(Long bundleId, int step) {
+        return templateRepository.findByBundleIdAndStep(bundleId, step)
+                .orElseThrow(() -> new IllegalStateException(
+                        "묶음 " + bundleId + "의 STEP " + step + " 미션 템플릿이 없습니다."));
     }
 }
