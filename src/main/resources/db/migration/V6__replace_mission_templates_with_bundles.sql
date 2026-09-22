@@ -13,8 +13,9 @@ ALTER TABLE mission_template
 ALTER TABLE mission_template
     ADD CONSTRAINT uq_mission_template_bundle_step UNIQUE (bundle_id, step);
 
--- source: TalkFile_꼭_찔러보기_미션_리스트_빈스텝채움.json (82묶음, STEP1·3은 82개 전부 고유, STEP2는
--- 81개 고유 + 중복 1건 — 중복은 그대로 둔다)
+-- source: TalkFile_꼭_찔러보기_미션_리스트_빈스텝채움.json (82묶음, 246행). 원본 그대로 옮겼다(파일과
+-- 행 단위로 대조 완료). 고유 문구 수는 STEP1 82개, STEP2 48개, STEP3 19개다 — STEP2·STEP3는 같은 활동
+-- 문구가 여러 묶음에서 재사용되도록 원본이 만들어져 있다(번호 라벨만 다르고 내용은 같은 행이 있음).
 INSERT INTO mission_template (bundle_id, step, content) VALUES
     (1, 1, '학과 부스 참여하고 스탬프 하나 같이 받아오기'),
     (1, 2, '총학생회 부스에서 떨어지는 봉잡기 체험하기'),

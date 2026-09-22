@@ -382,6 +382,7 @@ INSERT INTO event_limit_lock (lock_id) VALUES (1);
 
 `V6__replace_mission_templates_with_bundles.sql`은 미션 템플릿을 묶음(bundle) 구조로 교체한다. 기존
 STEP1 82개·STEP2 49개·STEP3 19개가 독립 풀이던 것을, 행 하나가 STEP1~3 한 세트인 82묶음(246행)으로 바꾼다.
+고유 문구 수는 STEP1 82개, STEP2 48개, STEP3 19개다(STEP2·STEP3는 같은 활동 문구가 여러 묶음에 재사용된다).
 기존 `match_mission_assignment`(마이그레이션 전 데이터)와 `mission_template`을 모두 지우고 새로 채운다
 (행사 전 데이터 초기화와 맞물려 있어 호환을 고려하지 않는다).
 

@@ -69,6 +69,31 @@ class MissionBundleAssignmentIntegrationTest extends MySqlIntegrationTestSupport
         userIds.clear();
     }
 
+    /**
+     * 마이그레이션(V6)이 원본 미션 리스트를 그대로 옮겼는지 셀 수 있는 형태로 고정한다. STEP2·STEP3는
+     * 같은 활동 문구가 여러 묶음에서 재사용되도록 원본이 만들어져 있어(예: "총학생회 부스에서 떨어지는
+     * 봉잡기 체험하기"가 여러 묶음의 STEP2), 고유 문구 수가 STEP1(82)보다 적다(STEP2 48, STEP3 19).
+     * 이 숫자가 달라지면 마이그레이션 데이터가 원본과 달라졌다는 뜻이다.
+     */
+    @Test
+    void migrationSeedsExactlyTheExpectedBundleShape() {
+        int totalRows = jdbcTemplate.queryForObject("select count(*) from mission_template", Integer.class);
+        int bundleCount = jdbcTemplate.queryForObject(
+                "select count(distinct bundle_id) from mission_template", Integer.class);
+        int step1Unique = jdbcTemplate.queryForObject(
+                "select count(distinct content) from mission_template where step = 1", Integer.class);
+        int step2Unique = jdbcTemplate.queryForObject(
+                "select count(distinct content) from mission_template where step = 2", Integer.class);
+        int step3Unique = jdbcTemplate.queryForObject(
+                "select count(distinct content) from mission_template where step = 3", Integer.class);
+
+        assertThat(totalRows).isEqualTo(246);
+        assertThat(bundleCount).isEqualTo(82);
+        assertThat(step1Unique).isEqualTo(82);
+        assertThat(step2Unique).isEqualTo(48);
+        assertThat(step3Unique).isEqualTo(19);
+    }
+
     @Test
     void assignsAllThreeStepsFromTheSameBundleAndMatchesMigrationContent() {
         long matchId = newMatch();
