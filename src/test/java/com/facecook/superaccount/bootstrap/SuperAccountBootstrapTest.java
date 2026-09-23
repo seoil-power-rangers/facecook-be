@@ -12,6 +12,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.ZoneOffset;
+import java.time.Instant;
+import java.time.Clock;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,12 +31,16 @@ class SuperAccountBootstrapTest {
 
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
 
+    // UTC 03:00 = 한국 시간 12:00.
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-09-30T03:00:00Z"), ZoneOffset.UTC);
+
     @Test
     void doesNotCreateSuperAccountWhenCredentialsAreBlank() {
         SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
                 new SuperAccountProperties("", ""),
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                CLOCK
         );
 
         bootstrap.run(null);
@@ -48,7 +55,8 @@ class SuperAccountBootstrapTest {
         SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
                 new SuperAccountProperties("rhgustjrwkwlxjf", "dlwlalsqhwlxjf"),
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                CLOCK
         );
 
         bootstrap.run(null);
@@ -58,6 +66,7 @@ class SuperAccountBootstrapTest {
         User saved = captor.getValue();
         assertThat(saved.getRole()).isEqualTo(UserRole.SUPER);
         assertThat(saved.getEmail()).isEqualTo("rhgustjrwkwlxjf");
+        assertThat(saved.getCreatedAt()).isEqualTo(java.time.LocalDateTime.of(2026, 9, 30, 12, 0));
         assertThat(passwordEncoder.matches("dlwlalsqhwlxjf", saved.getPasswordHash())).isTrue();
     }
 
@@ -69,7 +78,8 @@ class SuperAccountBootstrapTest {
         SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
                 new SuperAccountProperties("rhgustjrwkwlxjf", "dlwlalsqhwlxjf"),
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                CLOCK
         );
 
         bootstrap.run(null);
@@ -86,7 +96,8 @@ class SuperAccountBootstrapTest {
         SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
                 new SuperAccountProperties("rhgustjrwkwlxjf", "dlwlalsqhwlxjf"),
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                CLOCK
         );
 
         bootstrap.run(null);
@@ -103,7 +114,8 @@ class SuperAccountBootstrapTest {
         SuperAccountBootstrap bootstrap = new SuperAccountBootstrap(
                 new SuperAccountProperties("rhgustjrwkwlxjf", "dlwlalsqhwlxjf"),
                 userRepository,
-                passwordEncoder
+                passwordEncoder,
+                CLOCK
         );
 
         bootstrap.run(null);

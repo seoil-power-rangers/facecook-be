@@ -14,6 +14,8 @@ import com.facecook.auth.repository.UserRepository;
 import com.facecook.auth.support.EmailAddress;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
+import com.facecook.common.time.EventTime;
+import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,7 +24,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.time.LocalDateTime;
 import java.util.Set;
 
 /**
@@ -48,6 +49,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final VerificationCodeService verificationCodeService;
     private final PasswordEncoder passwordEncoder;
+    private final Clock clock;
 
     /**
      * 이메일 인증코드를 발급하고 메일로 보낸다(회원가입 또는 로그인용,
@@ -108,7 +110,7 @@ public class AuthService {
 
         User user;
         try {
-            user = User.createParticipant(email, LocalDateTime.now());
+            user = User.createParticipant(email, EventTime.now(clock));
             user.setPassword(passwordEncoder.encode(request.password()));
             user = userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException exception) {
