@@ -60,6 +60,30 @@ class ChatMessageControllerTest {
     }
 
     @Test
+    void acknowledgesSavedMessageEvenWhenRedisPublishFails() {
+        UUID clientMessageId = UUID.fromString("32fa481f-e623-49c3-9fa4-b47bf3dc84cc");
+        SendChatMessageRequest request = new SendChatMessageRequest("안녕하세요", clientMessageId);
+        ChatMessageResponse response = new ChatMessageResponse(
+                101L,
+                20L,
+                1L,
+                "안녕하세요",
+                clientMessageId,
+                LocalDateTime.of(2026, 9, 30, 12, 0)
+        );
+        ChatPrincipal principal = new ChatPrincipal(
+                new AuthenticatedUser(1L, "chat@example.com", UserRole.PARTICIPANT)
+        );
+        when(chatService.send(1L, 20L, request)).thenReturn(new ChatSendResult(response, true));
+        org.mockito.Mockito.doThrow(new org.springframework.data.redis.RedisConnectionFailureException("down"))
+                .when(publisher).publish(response);
+
+        ChatMessageResponse result = controller.send(20L, request, principal);
+
+        assertThat(result).isEqualTo(response);
+    }
+
+    @Test
     void acknowledgesExistingMessageWithoutPublishingDuplicate() {
         UUID clientMessageId = UUID.fromString("32fa481f-e623-49c3-9fa4-b47bf3dc84cc");
         SendChatMessageRequest request = new SendChatMessageRequest("재전송", clientMessageId);
