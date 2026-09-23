@@ -8,13 +8,13 @@ import com.facecook.mission.entity.MissionTemplate;
 import com.facecook.mission.repository.MatchMissionAssignmentRepository;
 import com.facecook.mission.repository.MatchMissionRepository;
 import com.facecook.mission.repository.MissionTemplateRepository;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -66,7 +66,7 @@ public class MissionAssignmentWriter {
                                 mission.getMatchId(),
                                 step,
                                 template,
-                                LocalDateTime.now(clock)
+                                EventTime.now(clock)
                         )
                 ));
             }

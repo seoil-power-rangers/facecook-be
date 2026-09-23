@@ -5,6 +5,8 @@ import com.facecook.auth.entity.UserRole;
 import com.facecook.auth.repository.UserRepository;
 import com.facecook.auth.support.EmailAddress;
 import com.facecook.superaccount.config.SuperAccountProperties;
+import com.facecook.common.time.EventTime;
+import java.time.Clock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -13,7 +15,6 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDateTime;
 
 @Slf4j
 @Component
@@ -23,6 +24,7 @@ public class SuperAccountBootstrap implements ApplicationRunner {
     private final SuperAccountProperties properties;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Clock clock;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -46,7 +48,7 @@ public class SuperAccountBootstrap implements ApplicationRunner {
         }
 
         try {
-            User superUser = User.createSuper(login, LocalDateTime.now());
+            User superUser = User.createSuper(login, EventTime.now(clock));
             superUser.setPassword(passwordEncoder.encode(properties.password()));
             userRepository.save(superUser);
             log.info("슈퍼 계정을 만들었습니다.");

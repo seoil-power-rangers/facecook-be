@@ -10,6 +10,7 @@ import com.facecook.mission.entity.MatchMission;
 import com.facecook.mission.entity.MatchMissionAssignment;
 import com.facecook.mission.event.MissionProgressCommittedEvent;
 import com.facecook.mission.repository.MatchMissionRepository;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -18,7 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -162,7 +162,7 @@ public class MissionService {
         MatchMission mission = matchMissionRepository.findByIdForUpdate(matchId)
                 .orElseThrow(() -> new ApiException(ErrorCode.NOT_FOUND, "매칭을 찾을 수 없습니다."));
         List<MatchMissionAssignment> assignments = assignmentService.assignIfAbsent(mission);
-        mission.completeCurrentStep(adminId, LocalDateTime.now(clock), expectedStep);
+        mission.completeCurrentStep(adminId, EventTime.now(clock), expectedStep);
         MissionProgressResponse participantProgress = MissionProgressResponse.from(mission, assignments);
         eventPublisher.publishEvent(new MissionProgressCommittedEvent(participantProgress));
         return AdminMissionProgressResponse.from(mission, assignments);
