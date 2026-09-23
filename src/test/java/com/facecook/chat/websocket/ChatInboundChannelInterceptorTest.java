@@ -6,6 +6,7 @@ import com.facecook.chat.service.ChatAuthorizationService;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.common.session.SessionToken;
+import com.facecook.common.session.SessionAuthenticator;
 import com.facecook.common.session.SessionTokenSigner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +47,7 @@ class ChatInboundChannelInterceptorTest {
 
     @BeforeEach
     void setUp() {
-        interceptor = new ChatInboundChannelInterceptor(signer, userRepository, authorizationService);
+        interceptor = new ChatInboundChannelInterceptor(new SessionAuthenticator(signer, userRepository), authorizationService);
     }
 
     @Test

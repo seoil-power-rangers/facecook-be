@@ -3,6 +3,7 @@ package com.facecook.chat.websocket;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
 import com.facecook.common.session.AuthenticatedUser;
+import com.facecook.common.session.SessionAuthenticator;
 import com.facecook.common.session.SessionCookieService;
 import com.facecook.common.session.SessionToken;
 import com.facecook.common.session.SessionTokenSigner;
@@ -47,7 +48,7 @@ class ChatHandshakeInterceptorTest {
 
     @BeforeEach
     void setUp() {
-        interceptor = new ChatHandshakeInterceptor(signer, cookieService, userRepository);
+        interceptor = new ChatHandshakeInterceptor(new SessionAuthenticator(signer, userRepository), cookieService);
         when(cookieService.cookieName()).thenReturn(COOKIE_NAME);
     }
 

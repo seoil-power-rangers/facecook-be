@@ -10,6 +10,7 @@ import com.facecook.chat.websocket.ChatPrincipal;
 import com.facecook.chat.websocket.ChatSessionAttributes;
 import com.facecook.chat.websocket.ChatStompErrorHandler;
 import com.facecook.common.session.SessionToken;
+import com.facecook.common.session.SessionAuthenticator;
 import com.facecook.common.session.SessionTokenSigner;
 import com.facecook.config.CorsProperties;
 import com.facecook.config.WebSocketConfig;
@@ -44,8 +45,7 @@ class MissionWebSocketInterceptorChainTest {
         ChatAuthorizationService chatAuthorizationService = mock(ChatAuthorizationService.class);
         MissionAuthorizationService missionAuthorizationService = mock(MissionAuthorizationService.class);
         ChatInboundChannelInterceptor chatInterceptor = new ChatInboundChannelInterceptor(
-                signer,
-                userRepository,
+                new SessionAuthenticator(signer, userRepository),
                 chatAuthorizationService
         );
         MissionInboundChannelInterceptor missionInterceptor =
