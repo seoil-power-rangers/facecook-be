@@ -69,8 +69,10 @@ matchId를 파싱한 뒤 `MatchInfo.includes`로 당사자를 확인한다.
 메시지 저장 후 `ChatMessagePublisher`가 JSON을 Redis에 publish한다. 각 서버의
 `RedisMessageListenerContainer`가 같은 채널을 subscribe하고,
 `ChatMessageSubscriber`가 자기 인스턴스의 `/topic/chat/{matchId}`로 전달한다.
-연결·종료 이벤트는 사용자별 Redis Set에 sessionId를 추가·삭제해 접속자 명단
-구조도 마련했다.
+연결·종료 이벤트는 사용자별 Redis Sorted Set(`facecook:chat:presence:v2:{userId}`)에
+`{서버 인스턴스 ID}:{sessionId}`를 만료 시각 점수로 추가·삭제해 접속자 명단을 관리한다.
+처음에는 만료 없는 Set이라 배포 시 강제 종료된 세션 기록이 영구히 남아 푸시가 막혔고,
+연결을 가진 서버가 30초마다 만료(90초)를 연장하는 방식으로 바꿨다(#81).
 
 이 구현은 여러 서버 인스턴스가 같은 Redis 채널을 구독하는 중계 구조까지
 포함한다. 다만 현재 로컬 1인스턴스 개발 단계에서는 실제 서버 두 대와 ALB를
