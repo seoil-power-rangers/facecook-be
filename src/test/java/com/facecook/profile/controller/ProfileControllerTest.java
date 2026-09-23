@@ -143,6 +143,29 @@ class ProfileControllerTest {
     }
 
     @Test
+    void rejectsProfileCreationUnderNineteen() throws Exception {
+        authenticateCurrentUser();
+
+        mockMvc.perform(post("/api/profile")
+                        .cookie(validCookie())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "nickname": "cook",
+                                  "gender": "female",
+                                  "age": 18,
+                                  "mbti": "ENFP",
+                                  "hobby": "요리",
+                                  "bloodType": "A"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION"));
+
+        verify(profileService, org.mockito.Mockito.never()).create(any(), any());
+    }
+
+    @Test
     void getsCurrentUserProfile() throws Exception {
         authenticateCurrentUser();
         when(profileService.get(CURRENT_USER_ID)).thenReturn(profile(CURRENT_USER_ID, "cook"));

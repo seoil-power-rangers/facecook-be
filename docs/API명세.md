@@ -107,7 +107,7 @@
 | --- | --- | --- | --- |
 | POST | `/api/profile/photo/upload-url` | S3 업로드용 presigned URL 발급 (`contentType`) → `{ uploadUrl, photoUrl }` | 참가자 |
 | GET | `/api/profile` | 내 프로필 조회 | 참가자 |
-| POST | `/api/profile` | 필수+선택 프로필 최초 등록 (`nickname, gender, age, mbti, hobby, bloodType, department?, grade?, bio?, idealType?, photo?`) | 참가자 |
+| POST | `/api/profile` | 필수+선택 프로필 최초 등록 (`nickname, gender, age(19 이상), mbti, hobby, bloodType, department?, grade?, bio?, idealType?, photo?`) | 참가자 |
 | PATCH | `/api/profile` | 선택 항목만 수정 (`department?, grade?, bio?, photo?`) — 필수 필드는 요청 자체에 안 받음 | 참가자 |
 | GET | `/api/profiles` | 참가자 목록 (본인 제외) | 참가자 |
 | GET | `/api/profiles/filters?active=` | 실제 참가자가 가진 학과·MBTI·취미 값(정렬됨). `active=true`면 활동 중인 참가자만 대상 | 참가자 |
@@ -126,6 +126,14 @@
 `users.last_active_at`은 인증된 요청마다 갱신되지만, 같은 사용자에 대해
 30초 안에 이미 갱신됐으면 다시 쓰지 않는다(디바운스) — 폴링이 잦은 화면이
 많아 매 요청마다 쓰기를 발생시키지 않기 위함이다.
+
+### 최소 나이(`age`) 검증
+
+`POST /api/profile`의 `age`는 19 이상만 허용한다. 19 미만이거나 누락되면
+`VALIDATION` 400을 반환한다. FE도 가입 화면에서 19세 미만을 막지만, API를
+직접 호출하는 경로까지 막으려면 서버 검증이 필요해서 추가했다. 이미 저장된
+프로필은 소급 검증하지 않는다(생성 시점에만 적용). `PATCH /api/profile`에는
+애초에 나이 필드가 없다.
 
 ### 학과(`department`) 값 검증
 

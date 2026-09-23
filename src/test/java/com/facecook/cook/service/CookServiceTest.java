@@ -11,7 +11,6 @@ import com.facecook.cook.repository.CookParticipants;
 import com.facecook.cook.repository.CookRepository;
 import com.facecook.cook.repository.CookUserRepository;
 import com.facecook.match.repository.MatchInfoRepository;
-import com.facecook.profile.dto.CreateProfileRequest;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
@@ -701,7 +700,7 @@ class CookServiceTest {
     }
 
     private static Profile profile(Long userId, String nickname) {
-        return Profile.create(userId, new CreateProfileRequest(
+        return Profile.create(userId, new Profile.NewProfile(
                 nickname,
                 "female",
                 21,

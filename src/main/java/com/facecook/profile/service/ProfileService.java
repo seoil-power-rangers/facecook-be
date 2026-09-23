@@ -58,7 +58,7 @@ public class ProfileService {
         requireValidDepartmentIfPresent(request.department());
 
         try {
-            Profile profile = profileRepository.saveAndFlush(Profile.create(userId, request));
+            Profile profile = profileRepository.saveAndFlush(Profile.create(userId, toNewProfile(request)));
             return activityLookup.toResponse(profile);
         } catch (DataIntegrityViolationException exception) {
             throw new ApiException(ErrorCode.PROFILE_ALREADY_EXISTS, exception);
@@ -106,7 +106,7 @@ public class ProfileService {
         requireValidDepartmentIfPresent(request.department());
 
         Profile profile = findProfile(userId);
-        profile.update(request);
+        profile.update(toEdit(request));
         return activityLookup.toResponse(profile);
     }
 
@@ -191,12 +191,7 @@ public class ProfileService {
             if (profile.getMbti() != null && !profile.getMbti().isBlank()) {
                 mbtis.add(profile.getMbti());
             }
-            for (String hobby : profile.getHobby().split(",")) {
-                String trimmed = hobby.trim();
-                if (!trimmed.isEmpty()) {
-                    hobbies.add(trimmed);
-                }
-            }
+            hobbies.addAll(splitHobby(profile.getHobby()));
         }
 
         return new ProfileFiltersResponse(
@@ -209,6 +204,31 @@ public class ProfileService {
     private Profile findProfile(Long userId) {
         return profileRepository.findById(userId)
                 .orElseThrow(() -> new ApiException(ErrorCode.PROFILE_NOT_FOUND));
+    }
+
+    /** 쉼표로 이어진 취미 문자열을 트리밍한 뒤 빈 항목을 뺀 목록으로 만든다. */
+    static List<String> splitHobby(String hobby) {
+        List<String> result = new ArrayList<>();
+        for (String token : hobby.split(",")) {
+            String trimmed = token.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        return result;
+    }
+
+    /** 요청 DTO를 엔티티가 아는 도메인 입력으로 바꾼다 — 엔티티는 요청 DTO를 모른다. */
+    private static Profile.NewProfile toNewProfile(CreateProfileRequest request) {
+        return new Profile.NewProfile(
+                request.nickname(), request.gender(), request.age(), request.mbti(), request.hobby(),
+                request.bloodType(), request.department(), request.grade(), request.bio(),
+                request.idealType(), request.photo()
+        );
+    }
+
+    private static Profile.Edit toEdit(UpdateProfileRequest request) {
+        return new Profile.Edit(request.department(), request.grade(), request.bio(), request.photo());
     }
 
     /** photo 필드에 우리 업로드 API가 내준 게 아닌 임의의 URL이 그대로 저장되지 않게 막는다. */
