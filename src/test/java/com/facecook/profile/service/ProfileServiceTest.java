@@ -114,6 +114,20 @@ class ProfileServiceTest {
     }
 
     @Test
+    void emptyStringOnUpdateClearsTheFieldUnlikeNull() {
+        Profile profile = profile(1L, "cook");
+        when(profileRepository.findById(1L)).thenReturn(Optional.of(profile));
+
+        ProfileResponse response = profileService.update(
+                1L,
+                new UpdateProfileRequest("", null, null, null)
+        );
+
+        assertThat(response.department()).isEmpty();
+        assertThat(response.grade()).isEqualTo("2학년");
+    }
+
+    @Test
     void rejectsUpdateWithoutAnyFields() {
         assertErrorCode(
                 () -> profileService.update(1L, new UpdateProfileRequest(null, null, null, null)),
@@ -208,6 +222,17 @@ class ProfileServiceTest {
     }
 
     @Test
+    void splitsHobbyStringTrimmingAndDroppingEmptyTokens() {
+        assertThat(ProfileService.splitHobby("요리, 영화보기 ,,산책"))
+                .containsExactly("요리", "영화보기", "산책");
+    }
+
+    @Test
+    void splitsSingleHobbyWithoutComma() {
+        assertThat(ProfileService.splitHobby("요리")).containsExactly("요리");
+    }
+
+    @Test
     void filtersOnlyActiveWhenRequested() {
         java.time.LocalDateTime since = java.time.LocalDateTime.of(2026, 9, 30, 12, 0);
         when(activityLookup.activeSince()).thenReturn(since);
@@ -233,14 +258,22 @@ class ProfileServiceTest {
     }
 
     private Profile profile(Long userId, String nickname) {
-        return Profile.create(userId, createRequest(nickname));
+        return Profile.create(userId, newProfile(nickname));
     }
 
     private Profile profileWith(Long userId, String nickname, String department, String mbti, String hobby) {
-        return Profile.create(userId, new CreateProfileRequest(
+        return Profile.create(userId, new Profile.NewProfile(
                 nickname, "female", 21, mbti, hobby, "A",
                 department, "2학년", "안녕하세요", "다정한 사람", null
         ));
+    }
+
+    private Profile.NewProfile newProfile(String nickname) {
+        return new Profile.NewProfile(
+                nickname, "female", 21, "ENFP", "요리", "A",
+                "소프트웨어공학과", "2학년", "안녕하세요", "다정한 사람",
+                "https://example.com/photo.jpg"
+        );
     }
 
     private CreateProfileRequest createRequest(String nickname) {

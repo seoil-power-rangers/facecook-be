@@ -3,7 +3,6 @@ package com.facecook.profile.service;
 import com.facecook.auth.entity.User;
 import com.facecook.auth.repository.UserRepository;
 import com.facecook.config.ProfileActivityProperties;
-import com.facecook.profile.dto.CreateProfileRequest;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import org.junit.jupiter.api.Test;
@@ -65,7 +64,7 @@ class ProfileActivityLookupTest {
         ReflectionTestUtils.setField(user, "lastActiveAt", NOW.minusMinutes(5));
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 
-        Profile profile = Profile.create(1L, new CreateProfileRequest(
+        Profile profile = Profile.create(1L, new Profile.NewProfile(
                 "닉네임", "female", 21, "ENFP", "요리", "A",
                 null, null, null, null, null
         ));
@@ -92,7 +91,7 @@ class ProfileActivityLookupTest {
         User user = User.createParticipant(userId + "@example.com", LocalDateTime.now());
         ReflectionTestUtils.setField(user, "lastActiveAt", lastActiveAt);
 
-        Profile profile = Profile.create(userId, new CreateProfileRequest(
+        Profile profile = Profile.create(userId, new Profile.NewProfile(
                 "닉네임", "female", 21, "ENFP", "요리", "A",
                 null, null, null, null, null
         ));

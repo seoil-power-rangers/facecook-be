@@ -1,8 +1,8 @@
 package com.facecook.profile.dto;
 
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 public record CreateProfileRequest(
@@ -15,7 +15,7 @@ public record CreateProfileRequest(
         String gender,
 
         @NotNull(message = "나이를 입력해주세요.")
-        @Positive(message = "나이는 양수여야 합니다.")
+        @Min(value = 19, message = "나이는 19세 이상이어야 합니다.")
         Integer age,
 
         @NotBlank(message = "MBTI를 입력해주세요.")

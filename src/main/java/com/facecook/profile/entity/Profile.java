@@ -1,8 +1,6 @@
 package com.facecook.profile.entity;
 
 import com.facecook.auth.entity.User;
-import com.facecook.profile.dto.CreateProfileRequest;
-import com.facecook.profile.dto.UpdateProfileRequest;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -81,37 +79,63 @@ public class Profile {
     @Column(name = "updated_at", nullable = false, insertable = false, updatable = false)
     private LocalDateTime updatedAt;
 
-    private Profile(Long userId, CreateProfileRequest request) {
+    private Profile(Long userId, NewProfile input) {
         this.userId = userId;
-        this.nickname = request.nickname();
-        this.gender = request.gender();
-        this.age = request.age();
-        this.mbti = request.mbti();
-        this.hobby = request.hobby();
-        this.bloodType = request.bloodType();
-        this.department = request.department();
-        this.grade = request.grade();
-        this.bio = request.bio();
-        this.photo = request.photo();
-        this.idealType = request.idealType();
+        this.nickname = input.nickname();
+        this.gender = input.gender();
+        this.age = input.age();
+        this.mbti = input.mbti();
+        this.hobby = input.hobby();
+        this.bloodType = input.bloodType();
+        this.department = input.department();
+        this.grade = input.grade();
+        this.bio = input.bio();
+        this.photo = input.photo();
+        this.idealType = input.idealType();
     }
 
-    public static Profile create(Long userId, CreateProfileRequest request) {
-        return new Profile(userId, request);
+    public static Profile create(Long userId, NewProfile input) {
+        return new Profile(userId, input);
     }
 
-    public void update(UpdateProfileRequest request) {
-        if (request.department() != null) {
-            this.department = request.department();
+    /**
+     * 넘어온 필드만 바꾼다 — 각 필드는 {@code null}이면 그대로 두고, 빈 문자열이면
+     * 지운다(작성자가 실제로 지우려는 것과 "안 건드림"을 구분해야 하는 부분 수정
+     * API라 이 둘을 섞으면 안 된다).
+     */
+    public void update(Edit edit) {
+        if (edit.department() != null) {
+            this.department = edit.department();
         }
-        if (request.grade() != null) {
-            this.grade = request.grade();
+        if (edit.grade() != null) {
+            this.grade = edit.grade();
         }
-        if (request.bio() != null) {
-            this.bio = request.bio();
+        if (edit.bio() != null) {
+            this.bio = edit.bio();
         }
-        if (request.photo() != null) {
-            this.photo = request.photo();
+        if (edit.photo() != null) {
+            this.photo = edit.photo();
         }
+    }
+
+    /**
+     * {@link #create}가 받는 도메인 입력. 요청 DTO({@code CreateProfileRequest})를
+     * 그대로 받지 않는 이유는, API 요청 형식이 바뀔 때마다 엔티티까지 따라 바뀌지
+     * 않게 하기 위해서다 — DTO→이 값 변환은 {@code ProfileService}가 한다.
+     */
+    public record NewProfile(
+            String nickname, String gender, Integer age, String mbti, String hobby,
+            String bloodType, String department, String grade, String bio,
+            String idealType, String photo
+    ) {
+    }
+
+    /**
+     * {@link #update}가 받는 도메인 입력. {@code CreateProfileRequest}와 마찬가지로
+     * {@code UpdateProfileRequest}를 직접 받지 않는다. 필드가 {@code null}이면
+     * "이 필드는 안 바꾼다"는 뜻이고, 이 의미는 변환하는 쪽({@code ProfileService})이
+     * 아니라 이 값을 적용하는 {@link #update}가 그대로 유지한다.
+     */
+    public record Edit(String department, String grade, String bio, String photo) {
     }
 }

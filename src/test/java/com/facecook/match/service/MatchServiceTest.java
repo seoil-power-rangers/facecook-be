@@ -7,7 +7,6 @@ import com.facecook.common.exception.ErrorCode;
 import com.facecook.match.entity.MatchInfo;
 import com.facecook.match.repository.MatchInfoRepository;
 import com.facecook.match.repository.RecentMessageProjection;
-import com.facecook.profile.dto.CreateProfileRequest;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
@@ -243,7 +242,7 @@ class MatchServiceTest {
     }
 
     private static Profile profile(Long userId, String nickname) {
-        return Profile.create(userId, new CreateProfileRequest(
+        return Profile.create(userId, new Profile.NewProfile(
                 nickname,
                 "female",
                 21,
