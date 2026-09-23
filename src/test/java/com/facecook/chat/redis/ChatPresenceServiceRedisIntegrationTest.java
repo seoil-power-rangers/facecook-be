@@ -8,6 +8,7 @@ import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -16,6 +17,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -195,6 +203,138 @@ class ChatPresenceServiceRedisIntegrationTest {
         redis.opsForSet().add("facecook:chat:presence:" + USER, "stale-session-from-old-deploy");
 
         assertThat(serverA.isConnected(USER)).isFalse();
+    }
+
+    // ---- 연결 해제와 기록 쓰기가 겹치는 경우(리뷰 지적) ----
+
+    @Test
+    void disconnectThatSlipsInWhileARefreshIsWritingDoesNotResurrectTheSession() throws Exception {
+        PausingScriptTemplate pausing = new PausingScriptTemplate(connectionFactory);
+        ChatPresenceService server = new ChatPresenceService(pausing, clock);
+        server.connected(USER, "s1");
+
+        pausing.pauseNextWrite();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> refresh = executor.submit(server::refreshLeases);
+            assertThat(pausing.awaitPaused()).as("연장이 쓰기 직전에 멈췄다").isTrue();
+
+            server.disconnected(USER, "s1");   // 연장이 쓰기 전에 연결이 끊긴다
+            pausing.resume();                  // 늦게 도착한 연장 쓰기
+            refresh.get(10, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(server.isConnected(USER)).as("끊긴 세션이 되살아나지 않는다").isFalse();
+        assertThat(redis.hasKey(ChatPresenceService.KEY_PREFIX + USER)).isFalse();
+    }
+
+    @Test
+    void disconnectThatSlipsInWhileConnectIsWritingDoesNotLeaveAStaleRecord() throws Exception {
+        PausingScriptTemplate pausing = new PausingScriptTemplate(connectionFactory);
+        ChatPresenceService server = new ChatPresenceService(pausing, clock);
+
+        pausing.pauseNextWrite();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> connect = executor.submit(() -> server.connected(USER, "s1"));
+            assertThat(pausing.awaitPaused()).as("등록이 쓰기 직전에 멈췄다").isTrue();
+
+            server.disconnected(USER, "s1");
+            pausing.resume();
+            connect.get(10, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(server.isConnected(USER)).isFalse();
+        assertThat(redis.hasKey(ChatPresenceService.KEY_PREFIX + USER)).isFalse();
+    }
+
+    @Test
+    void rapidConnectDisconnectWhileRefreshRunsConcurrentlyEndsOffline() throws Exception {
+        AtomicBoolean running = new AtomicBoolean(true);
+        Thread refresher = new Thread(() -> {
+            while (running.get()) {
+                serverA.refreshLeases();
+            }
+        });
+        refresher.start();
+        try {
+            for (int i = 0; i < 200; i++) {
+                serverA.connected(USER, "rapid-" + i);
+                serverA.disconnected(USER, "rapid-" + i);
+            }
+        } finally {
+            running.set(false);
+            refresher.join(10_000);
+        }
+
+        assertThat(serverA.isConnected(USER)).as("모든 세션이 끊겼으니 미접속").isFalse();
+        assertThat(redis.hasKey(ChatPresenceService.KEY_PREFIX + USER)).isFalse();
+    }
+
+    // ---- 실제 Redis TTL(리뷰 지적: MutableClock만으로는 키 만료를 확인하지 못한다) ----
+
+    @Test
+    void everyWrittenKeyCarriesARealRedisTtl() {
+        serverA.connected(USER, "s1");
+
+        Long ttlSeconds = redis.getExpire(ChatPresenceService.KEY_PREFIX + USER);
+        assertThat(ttlSeconds).as("TTL 없는 키(-1)가 남으면 안 된다")
+                .isBetween(1L, ChatPresenceService.LEASE.toSeconds());
+    }
+
+    @Test
+    void keyPhysicallyDisappearsFromRedisWhenNothingRefreshesIt() throws InterruptedException {
+        ChatPresenceService shortLease = new ChatPresenceService(redis, Clock.systemUTC(), Duration.ofSeconds(1));
+        shortLease.connected(USER, "s1");
+        assertThat(redis.hasKey(ChatPresenceService.KEY_PREFIX + USER)).isTrue();
+
+        Thread.sleep(1_500);   // 서버가 죽어 아무도 연장하지 않는다
+
+        assertThat(redis.hasKey(ChatPresenceService.KEY_PREFIX + USER))
+                .as("점수만 만료된 게 아니라 키 자체가 Redis에서 사라진다").isFalse();
+    }
+
+    /** 기록 쓰기(Lua 스크립트) 한 번을 테스트가 풀어줄 때까지 멈춰 세우는 템플릿. */
+    private static final class PausingScriptTemplate extends StringRedisTemplate {
+        private final AtomicBoolean pauseNext = new AtomicBoolean(false);
+        private final CountDownLatch paused = new CountDownLatch(1);
+        private final CountDownLatch resume = new CountDownLatch(1);
+
+        PausingScriptTemplate(LettuceConnectionFactory factory) {
+            super(factory);
+        }
+
+        void pauseNextWrite() {
+            pauseNext.set(true);
+        }
+
+        boolean awaitPaused() throws InterruptedException {
+            return paused.await(10, TimeUnit.SECONDS);
+        }
+
+        void resume() {
+            resume.countDown();
+        }
+
+        @Override
+        public <T> T execute(RedisScript<T> script, List<String> keys, Object... args) {
+            if (pauseNext.compareAndSet(true, false)) {
+                paused.countDown();
+                try {
+                    if (!resume.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("테스트가 쓰기를 풀어주지 않았다");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                }
+            }
+            return super.execute(script, keys, args);
+        }
     }
 
     /** 테스트에서 시간을 앞으로 돌리는 시계. */

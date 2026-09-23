@@ -1,12 +1,15 @@
 package com.facecook.chat.redis;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -56,15 +59,33 @@ public class ChatPresenceService {
     /** 연장 주기. {@link #LEASE}의 1/3이라 연장이 두 번 연속 실패해도 기록이 끊기지 않는다. */
     static final long REFRESH_INTERVAL_MS = 30_000;
 
+    /**
+     * 기록 쓰기와 키 만료 설정을 한 번에 한다. 두 명령으로 나누면 {@code ZADD} 직후 서버가 죽거나
+     * {@code PEXPIRE}만 실패했을 때 TTL 없는 키가 영구히 남는다.
+     */
+    private static final RedisScript<Long> WRITE_LEASE = new DefaultRedisScript<>(
+            "redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2]) "
+                    + "redis.call('PEXPIRE', KEYS[1], ARGV[3]) "
+                    + "return 1",
+            Long.class);
+
     private final StringRedisTemplate redisTemplate;
     private final Clock clock;
+    private final Duration lease;
     private final String instanceId = UUID.randomUUID().toString();
     /** 이 서버가 지금 실제로 들고 있는 세션(세션 ID → userId). 연장 대상은 이 목록뿐이다. */
     private final Map<String, Long> localSessions = new ConcurrentHashMap<>();
 
+    @Autowired
     public ChatPresenceService(StringRedisTemplate redisTemplate, Clock clock) {
+        this(redisTemplate, clock, LEASE);
+    }
+
+    /** 테스트에서 짧은 만료로 실제 Redis TTL을 확인하려고 둔다. */
+    ChatPresenceService(StringRedisTemplate redisTemplate, Clock clock, Duration lease) {
         this.redisTemplate = redisTemplate;
         this.clock = clock;
+        this.lease = lease;
     }
 
     /**
@@ -78,7 +99,7 @@ public class ChatPresenceService {
     public void connected(Long userId, String sessionId) {
         localSessions.put(sessionId, userId);
         try {
-            writeLease(userId, sessionId, clock.millis() + LEASE.toMillis());
+            writeLeaseIfStillLocal(userId, sessionId, clock.millis() + lease.toMillis());
         } catch (DataAccessException exception) {
             log.warn("WebSocket 접속자 등록에 실패했습니다(다음 연장 주기에 다시 기록). userId={}", userId, exception);
         }
@@ -99,7 +120,7 @@ public class ChatPresenceService {
             redisTemplate.opsForZSet().remove(key(userId), member(sessionId));
         } catch (DataAccessException exception) {
             log.warn("WebSocket 접속자 해제에 실패했습니다({}초 뒤 만료). userId={}",
-                    LEASE.toSeconds(), userId, exception);
+                    lease.toSeconds(), userId, exception);
         }
     }
 
@@ -131,10 +152,10 @@ public class ChatPresenceService {
     @Scheduled(fixedDelay = REFRESH_INTERVAL_MS, initialDelay = REFRESH_INTERVAL_MS)
     public void refreshLeases() {
         long now = clock.millis();
-        long expiresAt = now + LEASE.toMillis();
+        long expiresAt = now + lease.toMillis();
         for (Map.Entry<String, Long> session : List.copyOf(localSessions.entrySet())) {
             try {
-                writeLease(session.getValue(), session.getKey(), expiresAt);
+                writeLeaseIfStillLocal(session.getValue(), session.getKey(), expiresAt);
                 redisTemplate.opsForZSet().removeRangeByScore(key(session.getValue()), Double.NEGATIVE_INFINITY, now);
             } catch (DataAccessException exception) {
                 log.warn("WebSocket 접속자 만료 연장에 실패했습니다(다음 주기에 다시 시도). userId={}",
@@ -171,11 +192,23 @@ public class ChatPresenceService {
         }
     }
 
-    private void writeLease(Long userId, String sessionId, long expiresAt) {
+    /**
+     * 세션 기록을 쓰고, 쓰는 사이에 그 세션이 끊겼으면 방금 쓴 기록을 되돌린다.
+     *
+     * <p>{@link #connected}·{@link #refreshLeases}가 쓰기를 준비한 뒤 실제로 쓰기 전에 {@link #disconnected}가
+     * 로컬 목록과 Redis 기록을 먼저 지우면, 늦게 도착한 쓰기가 끊긴 세션을 되살린다. 로컬 목록에서도 빠졌으니
+     * 다시 연장되진 않지만 만료될 때까지(최대 {@link #lease}) 접속 중으로 보여 그동안의 푸시가 생략된다.
+     * {@code disconnected}는 로컬 목록을 먼저 지우고 나서 Redis를 지우므로, 쓰기 뒤에 로컬 목록을 다시 보면
+     * 어떤 순서로 겹쳐도 되살아난 기록이 남지 않는다.</p>
+     */
+    private void writeLeaseIfStillLocal(Long userId, String sessionId, long expiresAt) {
         String key = key(userId);
-        redisTemplate.opsForZSet().add(key, member(sessionId), expiresAt);
-        // 모든 멤버가 만료된 뒤 키 자체도 남지 않게 한다(판정은 점수로 하므로 이 TTL은 청소용이다).
-        redisTemplate.expire(key, LEASE);
+        String member = member(sessionId);
+        redisTemplate.execute(WRITE_LEASE, List.of(key),
+                String.valueOf(expiresAt), member, String.valueOf(lease.toMillis()));
+        if (!userId.equals(localSessions.get(sessionId))) {
+            redisTemplate.opsForZSet().remove(key, member);
+        }
     }
 
     private String member(String sessionId) {
