@@ -6,6 +6,7 @@ import com.facecook.push.entity.PushSubscription;
 import com.facecook.push.repository.PushSubscriptionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.Optional;
 
@@ -14,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -73,6 +75,39 @@ class PushSubscriptionServiceTest {
         assertThat(subscription.getP256dh()).isEqualTo("new-p256dh");
         assertThat(subscription.getAuth()).isEqualTo("new-auth");
         verify(pushSubscriptionRepository).save(subscription);
+    }
+
+    @Test
+    void retriesAsUpdateWhenConcurrentInsertLosesTheUniqueConstraintRace() {
+        // 첫 조회 때는 아직 없었다가(둘 다 "없음"으로 보고 INSERT를 시도하는 경합
+        // 상황을 흉내), save()가 나중에 커밋되는 쪽이라 unique 제약에 막힌다. 재조회하면
+        // 먼저 이긴 쪽이 이미 커밋해 둔 행이 보인다.
+        PushSubscription winnerRow = PushSubscription.create(
+                1L, "https://push.example/subscription", "other-p256dh", "other-auth");
+        when(pushSubscriptionRepository.findByUserIdAndEndpoint(1L, "https://push.example/subscription"))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winnerRow));
+        when(pushSubscriptionRepository.save(any(PushSubscription.class)))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        pushSubscriptionService.subscribe(1L, request("new-p256dh", "new-auth"));
+
+        assertThat(winnerRow.getP256dh()).isEqualTo("new-p256dh");
+        assertThat(winnerRow.getAuth()).isEqualTo("new-auth");
+        verify(pushSubscriptionRepository, times(2)).findByUserIdAndEndpoint(1L, "https://push.example/subscription");
+        verify(pushSubscriptionRepository, times(2)).save(any(PushSubscription.class));
+    }
+
+    @Test
+    void rethrowsOriginalExceptionWhenRetryLookupStillFindsNothing() {
+        DataIntegrityViolationException original = new DataIntegrityViolationException("duplicate key");
+        when(pushSubscriptionRepository.findByUserIdAndEndpoint(1L, "https://push.example/subscription"))
+                .thenReturn(Optional.empty());
+        when(pushSubscriptionRepository.save(any(PushSubscription.class))).thenThrow(original);
+
+        assertThatThrownBy(() -> pushSubscriptionService.subscribe(1L, request("new-p256dh", "new-auth")))
+                .isSameAs(original);
     }
 
     @Test
