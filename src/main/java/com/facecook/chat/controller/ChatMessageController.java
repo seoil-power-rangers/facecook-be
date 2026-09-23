@@ -57,9 +57,24 @@ public class ChatMessageController {
         }
         ChatSendResult result = chatService.send(chatPrincipal.user().userId(), matchId, request);
         if (result.created()) {
-            messagePublisher.publish(result.message());
+            publishBestEffort(result.message());
         }
         return result.message();
+    }
+
+    /**
+     * 발행 실패(Redis 장애 등)는 저장이 끝난 메시지를 실시간으로만 못 보내는 것이지
+     * 저장 자체가 실패한 게 아니다. 여기서 던지면 발신자에게 ERROR frame이 가서
+     * 이미 저장된 메시지를 다시 보내게 되는데, 그러면 같은 clientMessageId라
+     * ACK만 오고 재발행되지 않는다(facecook-be#84). 그래서 발행 실패는 로그만
+     * 남기고 ACK는 저장 성공을 기준으로 그대로 반환한다.
+     */
+    private void publishBestEffort(ChatMessageResponse message) {
+        try {
+            messagePublisher.publish(message);
+        } catch (RuntimeException publishFailure) {
+            log.error("채팅 메시지 실시간 발행에 실패했습니다. messageId={}", message.messageId(), publishFailure);
+        }
     }
 
     @MessageExceptionHandler(Exception.class)
