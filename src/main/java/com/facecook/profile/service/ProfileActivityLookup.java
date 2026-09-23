@@ -5,12 +5,12 @@ import com.facecook.auth.repository.UserRepository;
 import com.facecook.config.ProfileActivityProperties;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.entity.Profile;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -29,8 +29,6 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class ProfileActivityLookup {
-
-    private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
 
     private final UserRepository userRepository;
     private final ProfileActivityProperties properties;
@@ -71,10 +69,7 @@ public class ProfileActivityLookup {
      * 실시간에 가까운 참가자 화면용이라 통일하지 않는다.
      */
     public LocalDateTime activeSince() {
-        return now().minusMinutes(properties.activeWindowMinutes());
+        return EventTime.now(clock).minusMinutes(properties.activeWindowMinutes());
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), EVENT_ZONE);
-    }
 }

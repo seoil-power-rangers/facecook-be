@@ -11,6 +11,7 @@ import com.facecook.mission.entity.MatchMission;
 import com.facecook.mission.repository.MatchMissionRepository;
 import com.facecook.report.entity.ReportStatus;
 import com.facecook.report.repository.ReportRepository;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 /**
  * 관리자 대시보드용 전체 통계 스냅샷을 만든다.
@@ -31,8 +31,6 @@ import java.time.ZoneId;
 @Service
 @RequiredArgsConstructor
 public class AdminStatsService {
-    private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
-
     private final UserRepository userRepository;
     private final CookRepository cookRepository;
     private final MatchInfoRepository matchInfoRepository;
@@ -81,7 +79,7 @@ public class AdminStatsService {
             return userRepository.countByStatus(UserStatus.ACTIVE);
         }
 
-        LocalDate eventDate = LocalDate.now(clock.withZone(EVENT_ZONE));
+        LocalDate eventDate = EventTime.today(clock);
         LocalDateTime startInclusive = eventDate.atStartOfDay();
         return userRepository.countByLastActiveAtGreaterThanEqualAndLastActiveAtLessThan(
                 startInclusive,

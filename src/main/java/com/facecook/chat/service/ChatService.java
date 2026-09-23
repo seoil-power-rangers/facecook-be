@@ -9,6 +9,7 @@ import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.match.entity.MatchInfo;
 import com.facecook.push.service.ParticipantPushNotificationService;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -16,7 +17,6 @@ import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -29,8 +29,6 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class ChatService {
-
-    private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
 
     private final MessageRepository messageRepository;
     private final ChatMessagePageReader pageReader;
@@ -81,7 +79,7 @@ public class ChatService {
      * @see #getHistory(Long, Long, Long, int)
      */
     public ChatSendResult send(Long senderId, Long matchId, SendChatMessageRequest request) {
-        LocalDateTime now = now();
+        LocalDateTime now = EventTime.now(clock);
         ensureOperatingHours(now.toLocalTime());
         MatchInfo matchInfo = authorizationService.requireParticipant(matchId, senderId);
 
@@ -142,7 +140,4 @@ public class ChatService {
         }
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), EVENT_ZONE);
-    }
 }

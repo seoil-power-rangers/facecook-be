@@ -12,13 +12,13 @@ import com.facecook.match.repository.RecentMessageProjection;
 import com.facecook.profile.dto.ProfileResponse;
 import com.facecook.profile.repository.ProfileRepository;
 import com.facecook.profile.service.ProfileActivityLookup;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -37,8 +37,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class MatchService {
-
-    private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
 
     private final MatchInfoRepository matchInfoRepository;
     private final ProfileRepository profileRepository;
@@ -134,7 +132,7 @@ public class MatchService {
         if (!matchInfo.includes(userId)) {
             throw new ApiException(ErrorCode.FORBIDDEN);
         }
-        LocalDateTime readAt = now();
+        LocalDateTime readAt = EventTime.now(clock);
         if (matchInfo.isUserA(userId)) {
             matchInfoRepository.markReadAsUserA(matchId, readAt);
         } else {
@@ -190,7 +188,4 @@ public class MatchService {
                 .collect(Collectors.toMap(ProfileResponse::userId, Function.identity()));
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), EVENT_ZONE);
-    }
 }
