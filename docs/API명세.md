@@ -206,6 +206,14 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
 항목과 같다. STOMP 처리 실패는 ERROR frame의 JSON body
 `{ "code": "ERROR_CODE", "message": "..." }`로 반환한다.
 
+**하트비트(필수)**: 서버는 CONNECTED 프레임에 `heart-beat:10000,10000`을 보낸다. 클라이언트는
+CONNECT에 하트비트(10초 이하)를 설정해야 하며, 일정 시간(약 30초) 동안 아무 프레임도 오지 않으면 서버가
+연결을 끊는다 — 네트워크 전환 등으로 조용히 끊긴 연결을 정리하기 위해서다. facecook-fe는
+`chatSocket.ts`·`missionSocket.ts`에서 이미 10초로 보낸다.
+
+**접속자 명단**: 푸시 알림(콕·매칭·채팅)은 대상자가 WebSocket에 연결돼 있으면 보내지 않는다. 명단의
+기록은 연결을 가진 서버가 30초마다 연장하고, 연장이 멈추면(서버 강제 종료 등) 90초 뒤 만료된다(#81).
+
 ## 5. 미션
 
 | Method | Path | 설명 | 인증 |
