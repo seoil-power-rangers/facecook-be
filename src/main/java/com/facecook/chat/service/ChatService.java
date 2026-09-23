@@ -11,7 +11,6 @@ import com.facecook.match.entity.MatchInfo;
 import com.facecook.push.service.ParticipantPushNotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -34,6 +33,7 @@ public class ChatService {
     private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
 
     private final MessageRepository messageRepository;
+    private final ChatMessagePageReader pageReader;
     private final ChatAuthorizationService authorizationService;
     private final ParticipantPushNotificationService pushNotificationService;
     private final ChatOperatingHoursProperties operatingHoursProperties;
@@ -55,11 +55,7 @@ public class ChatService {
      */
     public List<ChatMessageResponse> getHistory(Long userId, Long matchId, Long before, int limit) {
         authorizationService.requireParticipant(matchId, userId);
-        PageRequest page = PageRequest.of(0, limit);
-        List<Message> messages = before == null
-                ? messageRepository.findByMatchIdOrderByIdDesc(matchId, page)
-                : messageRepository.findByMatchIdAndIdLessThanOrderByIdDesc(matchId, before, page);
-        return messages.stream().map(ChatMessageResponse::from).toList();
+        return pageReader.read(matchId, before, limit);
     }
 
     /**
@@ -90,7 +86,7 @@ public class ChatService {
         MatchInfo matchInfo = authorizationService.requireParticipant(matchId, senderId);
 
         ChatSendResult result = messageRepository.findByClientMessageId(request.clientMessageId())
-                .map(message -> new ChatSendResult(existingMessage(message, senderId, matchId), false))
+                .map(message -> existingResult(message, senderId, matchId))
                 .orElseGet(() -> saveOrFindExisting(senderId, matchId, request, now));
         if (result.created()) {
             pushNotificationService.chatMessageReceived(matchInfo.otherUserId(senderId), matchId);
@@ -117,12 +113,21 @@ public class ChatService {
             // saveAndFlush 자체 트랜잭션이 롤백된 뒤 다시 조회하므로 동시 재전송도
             // client_message_id UNIQUE 제약을 기준으로 같은 메시지에 수렴한다.
             return messageRepository.findByClientMessageId(request.clientMessageId())
-                    .map(message -> new ChatSendResult(existingMessage(message, senderId, matchId), false))
+                    .map(message -> existingResult(message, senderId, matchId))
                     .orElseThrow(() -> exception);
         }
     }
 
-    private ChatMessageResponse existingMessage(Message message, Long senderId, Long matchId) {
+    /** 이미 저장된 메시지를 재전송 결과({@code created=false})로 돌려준다. 첫 조회와 저장 충돌 뒤 재조회가 같이 쓴다. */
+    private ChatSendResult existingResult(Message message, Long senderId, Long matchId) {
+        return new ChatSendResult(verifySenderAndRoomThenConvert(message, senderId, matchId), false);
+    }
+
+    /**
+     * 기존 메시지가 같은 발신자·같은 채팅방의 것인지 검사하고 응답으로 바꾼다. 발신자만
+     * 보면 안 된다 — 같은 사람이 다른 방에서 UUID를 재사용해도 막아야 한다.
+     */
+    private ChatMessageResponse verifySenderAndRoomThenConvert(Message message, Long senderId, Long matchId) {
         if (!message.getSenderId().equals(senderId) || !message.getMatchId().equals(matchId)) {
             // 전역 UNIQUE UUID를 다른 사용자나 채팅방에서 재사용해 기존 메시지를
             // 열람하는 경로가 되지 않도록 충돌 정보는 노출하지 않는다.
@@ -132,7 +137,7 @@ public class ChatService {
     }
 
     private void ensureOperatingHours(LocalTime time) {
-        if (time.isBefore(operatingHoursProperties.openTime()) || !time.isBefore(operatingHoursProperties.closeTime())) {
+        if (!operatingHoursProperties.contains(time)) {
             throw new ApiException(ErrorCode.CLOSED);
         }
     }

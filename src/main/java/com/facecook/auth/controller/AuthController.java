@@ -38,7 +38,7 @@ public class AuthController {
             @Valid @RequestBody VerifySignupRequest request,
             HttpServletResponse response
     ) {
-        AuthVerificationResponse verification = authService.verifySignup(request);
+        AuthVerificationResponse verification = authService.verifyCodeAndCreateParticipant(request);
         sessionCookieService.issue(response, verification.userId());
         return ResponseEntity.ok(verification);
     }

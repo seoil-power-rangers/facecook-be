@@ -65,7 +65,7 @@ public class AuthService {
      * {@code NOT_FOUND}(LOGIN인데 미가입), {@code SUSPENDED},
      * {@code RESEND_TOO_SOON}.</p>
      *
-     * @see #verifySignup(VerifySignupRequest)
+     * @see #verifyCodeAndCreateParticipant(VerifySignupRequest)
      * @see #verifyLogin(VerifyLoginRequest)
      */
     public RequestCodeResponse requestCode(RequestCodeRequest request) {
@@ -97,7 +97,7 @@ public class AuthService {
      * @see #login(PasswordLoginRequest)
      */
     @Transactional
-    public AuthVerificationResponse verifySignup(VerifySignupRequest request) {
+    public AuthVerificationResponse verifyCodeAndCreateParticipant(VerifySignupRequest request) {
         String email = EmailAddress.normalize(request.email());
         validateRequiredTerms(request.agreedTerms());
         if (userRepository.existsByEmail(email)) {
@@ -167,20 +167,28 @@ public class AuthService {
         String email = EmailAddress.normalize(request.email());
         User user = userRepository.findByEmail(email).orElse(null);
         if (user == null) {
-            passwordEncoder.matches(request.password(), DUMMY_PASSWORD_HASH);
-            throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
+            throw invalidCredentialsAfterDummyComparison(request.password());
         }
         validateActive(user);
 
         String passwordHash = user.getPasswordHash();
         if (passwordHash == null) {
-            passwordEncoder.matches(request.password(), DUMMY_PASSWORD_HASH);
-            throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
+            throw invalidCredentialsAfterDummyComparison(request.password());
         }
         if (!passwordEncoder.matches(request.password(), passwordHash)) {
             throw new ApiException(ErrorCode.INVALID_CREDENTIALS);
         }
         return AuthVerificationResponse.from(user);
+    }
+
+    /**
+     * 비교할 실제 해시가 없을 때(계정 없음·비밀번호 없는 계정) 더미 해시로 비교를 한 번 실행하고
+     * 거절 예외를 만든다. 실제 비교를 하는 경로와 응답 시간이 비슷해야 가입 여부를 유추할 수 없다.
+     * 호출부는 반환된 예외를 그대로 던진다.
+     */
+    private ApiException invalidCredentialsAfterDummyComparison(String rawPassword) {
+        passwordEncoder.matches(rawPassword, DUMMY_PASSWORD_HASH);
+        return new ApiException(ErrorCode.INVALID_CREDENTIALS);
     }
 
     private void validateRequestEligibility(String email, VerificationPurpose purpose) {

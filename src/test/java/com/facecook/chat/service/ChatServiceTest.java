@@ -154,7 +154,14 @@ class ChatServiceTest {
         Clock clock = Clock.fixed(Instant.parse(instant), ZoneOffset.UTC);
         ChatOperatingHoursProperties operatingHoursProperties =
                 new ChatOperatingHoursProperties(LocalTime.of(9, 0), LocalTime.of(18, 0));
-        return new ChatService(messageRepository, authorizationService, pushNotificationService, operatingHoursProperties, clock);
+        return new ChatService(
+                messageRepository,
+                new ChatMessagePageReader(messageRepository),
+                authorizationService,
+                pushNotificationService,
+                operatingHoursProperties,
+                clock
+        );
     }
 
     private void givenMatch() {
