@@ -1,14 +1,9 @@
 package com.facecook.chat.websocket;
 
-import com.facecook.auth.entity.User;
-import com.facecook.auth.entity.UserStatus;
-import com.facecook.auth.repository.UserRepository;
 import com.facecook.chat.service.ChatAuthorizationService;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
-import com.facecook.common.session.AuthenticatedUser;
-import com.facecook.common.session.SessionToken;
-import com.facecook.common.session.SessionTokenSigner;
+import com.facecook.common.session.SessionAuthenticator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.lang.NonNull;
 import org.springframework.messaging.Message;
@@ -30,8 +25,7 @@ public class ChatInboundChannelInterceptor implements ChannelInterceptor {
     private static final Pattern CHAT_TOPIC = Pattern.compile("^/topic/chat/(\\d+)$");
     private static final Pattern CHAT_SEND = Pattern.compile("^/app/chat/(\\d+)/send$");
 
-    private final SessionTokenSigner signer;
-    private final UserRepository userRepository;
+    private final SessionAuthenticator authenticator;
     private final ChatAuthorizationService authorizationService;
 
     @Override
@@ -63,19 +57,16 @@ public class ChatInboundChannelInterceptor implements ChannelInterceptor {
             throw new ApiException(ErrorCode.UNAUTHORIZED);
         }
 
-        SessionToken sessionToken = signer.verify(token)
-                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
-        User user = userRepository.findById(sessionToken.userId())
-                .orElseThrow(() -> new ApiException(ErrorCode.UNAUTHORIZED));
-        if (user.getStatus() == UserStatus.SUSPENDED) {
+        // 핸드셰이크 이후 계정이 정지될 수 있어서 프레임마다 같은 정책으로 다시 확인한다.
+        SessionAuthenticator.Result result = authenticator.authenticate(token);
+        if (result.outcome() == SessionAuthenticator.Outcome.UNAUTHORIZED) {
+            throw new ApiException(ErrorCode.UNAUTHORIZED);
+        }
+        if (result.outcome() == SessionAuthenticator.Outcome.SUSPENDED) {
             throw new ApiException(ErrorCode.SUSPENDED);
         }
 
-        ChatPrincipal principal = new ChatPrincipal(new AuthenticatedUser(
-                user.getId(),
-                user.getEmail(),
-                user.getRole()
-        ));
+        ChatPrincipal principal = new ChatPrincipal(result.user());
         accessor.setUser(principal);
         attributes.put(ChatSessionAttributes.AUTHENTICATED_USER, principal.user());
         return principal;

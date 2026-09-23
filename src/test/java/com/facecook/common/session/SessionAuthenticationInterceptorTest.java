@@ -41,7 +41,7 @@ class SessionAuthenticationInterceptorTest {
 
     @BeforeEach
     void setUp() {
-        interceptor = new SessionAuthenticationInterceptor(signer, cookieService, userRepository);
+        interceptor = new SessionAuthenticationInterceptor(new SessionAuthenticator(signer, userRepository), cookieService);
         when(cookieService.cookieName()).thenReturn(COOKIE_NAME);
     }
 

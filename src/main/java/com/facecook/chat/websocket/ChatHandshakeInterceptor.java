@@ -1,15 +1,8 @@
 package com.facecook.chat.websocket;
 
-import com.facecook.auth.entity.User;
-import com.facecook.auth.entity.UserStatus;
-import com.facecook.auth.repository.UserRepository;
 import com.facecook.common.exception.ErrorCode;
-import com.facecook.common.session.AuthenticatedUser;
+import com.facecook.common.session.SessionAuthenticator;
 import com.facecook.common.session.SessionCookieService;
-import com.facecook.common.session.SessionToken;
-import com.facecook.common.session.SessionTokenSigner;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
@@ -20,16 +13,20 @@ import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
 import java.util.Map;
-import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class ChatHandshakeInterceptor implements HandshakeInterceptor {
 
-    private final SessionTokenSigner signer;
+    private final SessionAuthenticator authenticator;
     private final SessionCookieService cookieService;
-    private final UserRepository userRepository;
 
+    /**
+     * 세션 쿠키로 인증된 사용자만 WebSocket을 열게 한다. 인증 정책은 {@link
+     * SessionAuthenticator}에 있고, 여기서는 실패를 응답 상태로만 알린다(401, 정지면
+     * {@code SUSPENDED}의 상태). 통과하면 토큰 원문을 세션 속성에 남겨 STOMP
+     * 프레임마다 다시 검증할 수 있게 한다.
+     */
     @Override
     public boolean beforeHandshake(
             ServerHttpRequest request,
@@ -42,39 +39,25 @@ public class ChatHandshakeInterceptor implements HandshakeInterceptor {
             return false;
         }
 
-        Optional<String> rawToken = readCookie(
-                servletRequest.getServletRequest(),
-                cookieService.cookieName()
-        );
-        if (rawToken.isEmpty()) {
-            response.setStatusCode(HttpStatus.UNAUTHORIZED);
-            return false;
-        }
-
-        Optional<SessionToken> sessionToken = signer.verify(rawToken.get());
-        if (sessionToken.isEmpty()) {
-            response.setStatusCode(HttpStatus.UNAUTHORIZED);
-            return false;
-        }
-
-        Optional<User> user = userRepository.findById(sessionToken.get().userId());
-        if (user.isEmpty()) {
-            response.setStatusCode(HttpStatus.UNAUTHORIZED);
-            return false;
-        }
-        if (user.get().getStatus() == UserStatus.SUSPENDED) {
-            response.setStatusCode(ErrorCode.SUSPENDED.getStatus());
-            return false;
-        }
-
-        AuthenticatedUser authenticatedUser = new AuthenticatedUser(
-                user.get().getId(),
-                user.get().getEmail(),
-                user.get().getRole()
-        );
-        attributes.put(ChatSessionAttributes.SESSION_TOKEN, rawToken.get());
-        attributes.put(ChatSessionAttributes.AUTHENTICATED_USER, authenticatedUser);
-        return true;
+        String rawToken = SessionAuthenticator
+                .readCookie(servletRequest.getServletRequest(), cookieService.cookieName())
+                .orElse(null);
+        SessionAuthenticator.Result result = authenticator.authenticate(rawToken);
+        return switch (result.outcome()) {
+            case UNAUTHORIZED -> {
+                response.setStatusCode(HttpStatus.UNAUTHORIZED);
+                yield false;
+            }
+            case SUSPENDED -> {
+                response.setStatusCode(ErrorCode.SUSPENDED.getStatus());
+                yield false;
+            }
+            case AUTHENTICATED -> {
+                attributes.put(ChatSessionAttributes.SESSION_TOKEN, rawToken);
+                attributes.put(ChatSessionAttributes.AUTHENTICATED_USER, result.user());
+                yield true;
+            }
+        };
     }
 
     @Override
@@ -85,18 +68,5 @@ public class ChatHandshakeInterceptor implements HandshakeInterceptor {
             Exception exception
     ) {
         // no-op
-    }
-
-    private Optional<String> readCookie(HttpServletRequest request, String cookieName) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            return Optional.empty();
-        }
-        for (Cookie cookie : cookies) {
-            if (cookieName.equals(cookie.getName())) {
-                return Optional.ofNullable(cookie.getValue());
-            }
-        }
-        return Optional.empty();
     }
 }

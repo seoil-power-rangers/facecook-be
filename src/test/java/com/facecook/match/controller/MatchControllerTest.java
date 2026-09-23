@@ -7,6 +7,7 @@ import com.facecook.common.exception.GlobalExceptionHandler;
 import com.facecook.common.session.ActivityTrackingInterceptor;
 import com.facecook.common.session.CurrentUserArgumentResolver;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
+import com.facecook.common.session.SessionAuthenticator;
 import com.facecook.common.session.SessionCookieService;
 import com.facecook.common.session.SessionProperties;
 import com.facecook.common.session.SessionTokenSigner;
@@ -43,6 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class,
         WebConfig.class,
         SessionAuthenticationInterceptor.class,
+        SessionAuthenticator.class,
         ActivityTrackingInterceptor.class,
         CurrentUserArgumentResolver.class,
         SessionTokenSigner.class,
