@@ -1,6 +1,7 @@
 package com.facecook.auth.service;
 
 import com.facecook.auth.repository.UserRepository;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -8,7 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 /**
  * "현재 활동 중" 표시(기능명세 2절)의 근거가 되는 users.last_active_at을
@@ -18,8 +18,6 @@ import java.time.ZoneId;
 @Service
 @RequiredArgsConstructor
 public class UserActivityService {
-
-    private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
 
     /**
      * 이 시간 안에 이미 갱신됐으면 다시 쓰지 않는다. 프론트가 5초 간격으로
@@ -45,11 +43,8 @@ public class UserActivityService {
      */
     @Transactional
     public void touch(Long userId) {
-        LocalDateTime now = now();
+        LocalDateTime now = EventTime.now(clock);
         userRepository.touchLastActiveAt(userId, now, now.minus(TOUCH_DEBOUNCE));
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), EVENT_ZONE);
-    }
 }

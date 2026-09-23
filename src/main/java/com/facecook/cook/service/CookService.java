@@ -20,6 +20,7 @@ import com.facecook.profile.entity.Profile;
 import com.facecook.profile.repository.ProfileRepository;
 import com.facecook.profile.service.ProfileActivityLookup;
 import com.facecook.push.service.ParticipantPushNotificationService;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -28,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -54,8 +54,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CookService {
     public static final int DAILY_LIMIT = 10;
-    private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
-
     /**
      * 그날 전체 참가자가 보낼 수 있는 콕 총량(개인별 하루 10개와는 별개인
      * 시스템 전체 안전판). 예상 활성 참가자 수(300/600/900) × 유저당 하루
@@ -111,7 +109,7 @@ public class CookService {
         }
 
         lockUsersAndValidateReceiver(senderId, receiverId);
-        LocalDateTime now = now();
+        LocalDateTime now = EventTime.now(clock);
         lockEventWideLimitIfApplicable(now.toLocalDate());
         Optional<Cook> reverseCook = validateSendable(senderId, receiverId, now);
         Cook cook = savePendingCook(senderId, receiverId, now);
@@ -178,7 +176,7 @@ public class CookService {
      */
     @Transactional(readOnly = true)
     public CookListResponse getCooks(Long userId) {
-        LocalDateTime now = now();
+        LocalDateTime now = EventTime.now(clock);
         List<Cook> cooks = cookRepository.findAllBySenderIdOrReceiverIdOrderBySentAtDesc(userId, userId)
                 .stream()
                 .filter(cook -> cook.getStatus() != CookStatus.CANCELLED)
@@ -415,9 +413,6 @@ public class CookService {
                 .collect(Collectors.toMap(ProfileResponse::userId, Function.identity()));
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), EVENT_ZONE);
-    }
 
     private DateRange today(LocalDate date) {
         LocalDateTime start = date.atStartOfDay();

@@ -10,13 +10,13 @@ import com.facecook.report.dto.ReportResponse;
 import com.facecook.report.dto.ResolveReportRequest;
 import com.facecook.report.entity.Report;
 import com.facecook.report.repository.ReportRepository;
+import com.facecook.common.time.EventTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -29,8 +29,6 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class ReportService {
-    private static final ZoneId EVENT_ZONE = ZoneId.of("Asia/Seoul");
-
     private final ReportRepository reportRepository;
     private final UserRepository userRepository;
     private final Clock clock;
@@ -62,7 +60,7 @@ public class ReportService {
                 request.reportedUserId(),
                 request.reason(),
                 request.detail(),
-                now()
+                EventTime.now(clock)
         );
         return ReportResponse.from(reportRepository.save(report));
     }
@@ -125,7 +123,7 @@ public class ReportService {
     public ReportResponse resolve(Long reportId, Long adminId, ResolveReportRequest request) {
         Report report = reportRepository.findByIdForUpdate(reportId)
                 .orElseThrow(() -> new ApiException(ErrorCode.REPORT_NOT_FOUND));
-        report.review(adminId, now());
+        report.review(adminId, EventTime.now(clock));
 
         if (request.suspend()) {
             User reportedUser = userRepository.findById(report.getReportedUserId())
@@ -161,7 +159,4 @@ public class ReportService {
                 .orElseThrow(() -> new ApiException(ErrorCode.REPORT_NOT_FOUND));
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), EVENT_ZONE);
-    }
 }
