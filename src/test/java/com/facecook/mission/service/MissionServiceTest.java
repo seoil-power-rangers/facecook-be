@@ -96,7 +96,8 @@ class MissionServiceTest {
         var response = missionService.completeCurrentStep(10L, 7L, 1);
 
         assertThat(response.currentStep()).isEqualTo(2);
-        assertThat(response.step1CompletedAt()).isEqualTo(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
+        // NOW(UTC 03:00)의 한국 시간 12:00으로 저장돼야 한다 — 예전엔 UTC 03:00이 그대로 저장돼 9시간 어긋났다(#77).
+        assertThat(response.step1CompletedAt()).isEqualTo(LocalDateTime.of(2026, 9, 30, 12, 0));
         assertThat(response.step1CompletedBy()).isEqualTo(7L);
         ArgumentCaptor<MissionProgressCommittedEvent> eventCaptor =
                 ArgumentCaptor.forClass(MissionProgressCommittedEvent.class);

@@ -5,6 +5,12 @@ spring:
     url: ${DB_URL:jdbc:mysql://localhost:3306/facecook}
     username: ${DB_USERNAME:facecook}
     password: ${DB_PASSWORD:local-dev-password}
+    hikari:
+      # DB가 기본값(CURRENT_TIMESTAMP)으로 채우는 시각 컬럼(profile.created_at 등)도 한국 시간으로
+      # 저장되게 연결마다 세션 시간대를 맞춘다. 코드가 만드는 시각은 EventTime이 한국 시간으로 만든다.
+      # 시각 컬럼이 전부 DATETIME이라 이미 저장된 값이나 애플리케이션이 넣는 값은 이 설정으로
+      # 바뀌지 않는다. 한국은 서머타임이 없어 고정 오프셋으로 충분하다.
+      connection-init-sql: "SET time_zone = '+09:00'"
   jpa:
     hibernate:
       ddl-auto: validate

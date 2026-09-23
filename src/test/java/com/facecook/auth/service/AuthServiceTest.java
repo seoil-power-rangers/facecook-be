@@ -21,6 +21,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.ZoneOffset;
+import java.time.Instant;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.Set;
@@ -35,6 +38,9 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
+    // UTC 03:00 = 한국 시간 12:00. 가입 시각이 한국 시간으로 저장되는지 확인하는 데 쓴다.
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-09-30T03:00:00Z"), ZoneOffset.UTC);
+
     @Mock
     private UserRepository userRepository;
 
@@ -48,7 +54,7 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         passwordEncoder = new BCryptPasswordEncoder(4);
-        authService = new AuthService(userRepository, verificationCodeService, passwordEncoder);
+        authService = new AuthService(userRepository, verificationCodeService, passwordEncoder, CLOCK);
     }
 
     @Test
@@ -123,6 +129,10 @@ class AuthServiceTest {
         verify(userRepository).saveAndFlush(savedUser.capture());
         assertThat(savedUser.getValue().getPasswordHash()).isNotEqualTo("password123");
         assertThat(passwordEncoder.matches("password123", savedUser.getValue().getPasswordHash())).isTrue();
+        LocalDateTime koreanNoon = LocalDateTime.of(2026, 9, 30, 12, 0);
+        assertThat(savedUser.getValue().getCreatedAt()).isEqualTo(koreanNoon);
+        assertThat(savedUser.getValue().getAgreedTermsAt()).isEqualTo(koreanNoon);
+        assertThat(savedUser.getValue().getAgreedPrivacyAt()).isEqualTo(koreanNoon);
     }
 
     @Test
@@ -240,7 +250,7 @@ class AuthServiceTest {
     @Test
     void unknownEmailStillRunsOneHashComparisonBeforeRejecting() {
         PasswordEncoder spyEncoder = org.mockito.Mockito.spy(new BCryptPasswordEncoder(4));
-        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder);
+        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder, CLOCK);
         when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
 
         assertErrorCode(
@@ -254,7 +264,7 @@ class AuthServiceTest {
     @Test
     void accountWithoutPasswordStillRunsOneHashComparisonBeforeRejecting() {
         PasswordEncoder spyEncoder = org.mockito.Mockito.spy(new BCryptPasswordEncoder(4));
-        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder);
+        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder, CLOCK);
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(participant("user@example.com")));
 
         assertErrorCode(
@@ -268,7 +278,7 @@ class AuthServiceTest {
     @Test
     void suspendedAccountIsRejectedBeforeAnyPasswordComparison() {
         PasswordEncoder spyEncoder = org.mockito.Mockito.spy(new BCryptPasswordEncoder(4));
-        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder);
+        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder, CLOCK);
         User user = participantWithPassword("user@example.com", "password123");
         user.suspend();
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
