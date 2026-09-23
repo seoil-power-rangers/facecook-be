@@ -86,11 +86,14 @@ class PushSubscriptionConcurrencyIntegrationTest extends MySqlIntegrationTestSup
                     Integer.class, userId, endpoint);
             assertThat(rowCount).as("행이 하나만 남아야 한다").isEqualTo(1);
 
-            String p256dh = jdbcTemplate.queryForObject(
-                    "select p256dh from push_subscription where user_id = ? and endpoint = ?",
-                    String.class, userId, endpoint);
-            assertThat(p256dh).as("최종 키는 둘 중 한 요청의 값과 같아야 한다(섞이거나 비어있지 않음)")
-                    .isIn("p256dh-A", "p256dh-B");
+            var savedKeys = jdbcTemplate.queryForMap(
+                    "select p256dh, auth from push_subscription where user_id = ? and endpoint = ?",
+                    userId, endpoint);
+            boolean matchesA = "p256dh-A".equals(savedKeys.get("p256dh")) && "auth-A".equals(savedKeys.get("auth"));
+            boolean matchesB = "p256dh-B".equals(savedKeys.get("p256dh")) && "auth-B".equals(savedKeys.get("auth"));
+            assertThat(matchesA || matchesB)
+                    .as("최종 p256dh·auth는 같은 요청 한 쌍이어야 한다(둘이 섞이거나 비어있지 않음): " + savedKeys)
+                    .isTrue();
         }
     }
 
