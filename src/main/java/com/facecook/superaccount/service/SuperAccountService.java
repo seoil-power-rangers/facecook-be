@@ -5,6 +5,7 @@ import com.facecook.auth.repository.UserRepository;
 import com.facecook.chat.dto.ChatMessageResponse;
 import com.facecook.chat.entity.Message;
 import com.facecook.chat.repository.MessageRepository;
+import com.facecook.chat.service.ChatMessagePageReader;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.match.entity.MatchInfo;
@@ -15,7 +16,6 @@ import com.facecook.superaccount.dto.SuperChatMemberResponse;
 import com.facecook.superaccount.dto.SuperChatRoomResponse;
 import com.facecook.superaccount.dto.SuperUserResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +47,7 @@ public class SuperAccountService {
     private final ProfileRepository profileRepository;
     private final MatchInfoRepository matchInfoRepository;
     private final MessageRepository messageRepository;
+    private final ChatMessagePageReader messagePageReader;
 
     /**
      * 전체 유저 목록을 프로필과 함께 반환한다(정렬 순서 보장 없음 —
@@ -135,11 +136,7 @@ public class SuperAccountService {
         if (!matchInfoRepository.existsById(matchId)) {
             throw new ApiException(ErrorCode.NOT_FOUND, "매칭을 찾을 수 없습니다.");
         }
-        PageRequest page = PageRequest.of(0, limit);
-        List<Message> messages = before == null
-                ? messageRepository.findByMatchIdOrderByIdDesc(matchId, page)
-                : messageRepository.findByMatchIdAndIdLessThanOrderByIdDesc(matchId, before, page);
-        return messages.stream().map(ChatMessageResponse::from).toList();
+        return messagePageReader.read(matchId, before, limit);
     }
 
     private SuperChatMemberResponse member(

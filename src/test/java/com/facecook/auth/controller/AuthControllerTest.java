@@ -134,7 +134,7 @@ class AuthControllerTest {
 
     @Test
     void verifiesSignupResponseAndIssuesSessionCookie() throws Exception {
-        when(authService.verifySignup(any())).thenReturn(
+        when(authService.verifyCodeAndCreateParticipant(any())).thenReturn(
                 new AuthVerificationResponse(1L, "user@example.com", "participant")
         );
 

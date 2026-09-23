@@ -97,7 +97,7 @@ class AuthServiceTest {
                 Set.of("service")
         );
 
-        assertErrorCode(() -> authService.verifySignup(request), ErrorCode.TERMS_REQUIRED);
+        assertErrorCode(() -> authService.verifyCodeAndCreateParticipant(request), ErrorCode.TERMS_REQUIRED);
         verify(verificationCodeService, never()).verify(any(), any(), any());
     }
 
@@ -107,7 +107,7 @@ class AuthServiceTest {
         when(userRepository.saveAndFlush(any(User.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        AuthVerificationResponse response = authService.verifySignup(new VerifySignupRequest(
+        AuthVerificationResponse response = authService.verifyCodeAndCreateParticipant(new VerifySignupRequest(
                 " User@Example.com ",
                 "123456",
                 "password123",
@@ -232,6 +232,52 @@ class AuthServiceTest {
                 () -> authService.login(new PasswordLoginRequest("user@example.com", "password123")),
                 ErrorCode.SUSPENDED
         );
+    }
+
+    // 아래 세 테스트는 로그인 실패 경로의 "응답 시간 균일화" 장치를 고정한다. 이메일이 없거나
+    // 비밀번호가 없는 계정이어도 해시 비교를 정확히 한 번 실행해야, 응답 시간으로 가입 여부를
+    // 알아낼 수 없다. 정지 계정은 비밀번호 비교 전에 거절한다(기존 동작).
+    @Test
+    void unknownEmailStillRunsOneHashComparisonBeforeRejecting() {
+        PasswordEncoder spyEncoder = org.mockito.Mockito.spy(new BCryptPasswordEncoder(4));
+        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder);
+        when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
+
+        assertErrorCode(
+                () -> service.login(new PasswordLoginRequest("missing@example.com", "password123")),
+                ErrorCode.INVALID_CREDENTIALS
+        );
+        verify(spyEncoder, org.mockito.Mockito.times(1))
+                .matches(org.mockito.ArgumentMatchers.eq("password123"), any());
+    }
+
+    @Test
+    void accountWithoutPasswordStillRunsOneHashComparisonBeforeRejecting() {
+        PasswordEncoder spyEncoder = org.mockito.Mockito.spy(new BCryptPasswordEncoder(4));
+        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder);
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(participant("user@example.com")));
+
+        assertErrorCode(
+                () -> service.login(new PasswordLoginRequest("user@example.com", "password123")),
+                ErrorCode.INVALID_CREDENTIALS
+        );
+        verify(spyEncoder, org.mockito.Mockito.times(1))
+                .matches(org.mockito.ArgumentMatchers.eq("password123"), any());
+    }
+
+    @Test
+    void suspendedAccountIsRejectedBeforeAnyPasswordComparison() {
+        PasswordEncoder spyEncoder = org.mockito.Mockito.spy(new BCryptPasswordEncoder(4));
+        AuthService service = new AuthService(userRepository, verificationCodeService, spyEncoder);
+        User user = participantWithPassword("user@example.com", "password123");
+        user.suspend();
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+
+        assertErrorCode(
+                () -> service.login(new PasswordLoginRequest("user@example.com", "wrong-password")),
+                ErrorCode.SUSPENDED
+        );
+        verify(spyEncoder, never()).matches(any(), any());
     }
 
     private User participant(String email) {
