@@ -83,9 +83,9 @@
 | 2 | 공통 뼈대 (요청 하나가 지나가는 길, 로그인 확인, 오류, 시각, 트랜잭션, 설정, 문법) | 작성 |
 | 3.1~3.2 | 가입·로그인, 프로필 | 작성 |
 | 3.3~3.5 | 콕, 매칭, 채팅 | 작성 |
-| 3.6~3.7 | 미션, 푸시 | 다음 PR |
+| 3.6~3.7 | 미션, 푸시 | 작성 |
 | 3.8~3.9 | 신고, 관리자·슈퍼 계정 | 다음 PR |
-| 4 | 실시간·비동기 | WebSocket·Redis·접속 기록 작성, 실행기·스케줄러는 다음 PR |
+| 4 | 실시간·비동기 | 작성 |
 | 5~9 | 데이터, 배포·운영, 테스트, 따라 해보기, 용어집 | 작성(기능 장이 늘면 보강) |
 
 ---
@@ -151,8 +151,8 @@ flowchart LR
 | `cook` | 콕 보내기·받기·취소·거절, 하루 한도 | 3.3 |
 | `match` | 매칭 목록·상세, 읽음 처리 | 3.4 |
 | `chat` | 채팅 REST·WebSocket, Redis 중계, 접속 기록 | 3.5 |
-| `mission` | 매칭별 미션 배정·진행, 관리자 완료 처리 | 3.6 (다음 PR) |
-| `push` | 웹 푸시 구독·발송 | 3.7 (다음 PR) |
+| `mission` | 매칭별 미션 배정·진행, 관리자 완료 처리 | 3.6 |
+| `push` | 웹 푸시 구독·발송 | 3.7 |
 | `report` | 신고와 관리자 처리(정지) | 3.8 (다음 PR) |
 | `admin` | 관리자 통계 | 3.9 (다음 PR) |
 | `superaccount` | 슈퍼 계정 생성·전체 열람 | 3.9 (다음 PR) |
@@ -880,9 +880,183 @@ flowchart LR
 
 ---
 
-### 3.6 미션 (`mission`) — 다음 PR에서 작성
+### 3.6 미션 (`mission`)
 
-### 3.7 푸시 (`push`) — 다음 PR에서 작성
+#### 무슨 기능인가
+
+매칭된 두 사람이 부스에서 함께 하는 3단계 과제다. 매칭마다 미션 **묶음** 하나(STEP 1~3 세트)가 무작위로 배정되고, 참가자는 지금 STEP의 문구만 본다. 과제를 했는지는 **운영진(관리자)이 부스에서 직접 확인하고** 완료 처리한다 — 참가자가 스스로 &quot;완료&quot;를 누르는 API는 없다. 완료되면 참가자 화면이 실시간으로 다음 STEP으로 바뀐다.
+
+#### API
+
+| API | 서비스 | 누가 |
+| --- | --- | --- |
+| `GET /api/matches/{matchId}/mission` | `MissionService.getProgressAndAssignIfMissing` | 매칭 당사자 |
+| `GET /api/admin/missions[?includeExcluded=true]` | `MissionService.getAllProgress` / `getAllProgressWithExclusions` | 관리자 |
+| `POST /api/admin/missions/{matchId}/complete` `{expectedStep}` | `MissionService.completeCurrentStep` | 관리자 |
+| `SUBSCRIBE /topic/mission/{matchId}` (WebSocket) | `MissionEventSubscriber`가 전달 | 매칭 당사자 |
+
+#### 테이블 두 개, 엔티티 셋
+
+| 엔티티 | 테이블 | 뜻 |
+| --- | --- | --- |
+| `MatchMission` | `match_info` | 매칭의 미션 진행(현재 STEP, STEP별 완료 시각·처리자). **매칭의 `MatchInfo`와 같은 행**을 미션 컬럼만 보는 엔티티다 |
+| `MatchMissionAssignment` | `match_mission_assignment` | 매칭에 배정된 STEP별 미션(매칭당 3행) |
+| `MissionTemplate` | `mission_template` | 미션 문구 원본. 묶음(bundle) 단위, V6 마이그레이션이 넣은 고정 데이터 |
+
+`MatchInfo`는 읽음 시각을, `MatchMission`은 진행 단계를 다루고 서로의 컬럼은 매핑하지 않는다. 엔티티가 둘이라 &quot;당사자인가&quot; 검사도 `ChatAuthorizationService`(→`MatchInfo`)와 `MissionAuthorizationService`(→`MatchMission`)에 똑같은 모양으로 따로 있다.
+
+#### 호출 흐름 ① 참가자가 미션을 처음 볼 때: 필요할 때 한 번만 배정
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FE as 참가자 FE
+    participant MS as MissionService
+    participant AS as MissionAssignmentService
+    participant W as MissionAssignmentWriter
+    participant DB as match_info / 배정 / 템플릿
+    FE-&gt;&gt;MS: GET /api/matches/7/mission
+    MS-&gt;&gt;MS: 당사자인가(아니면 403)
+    MS-&gt;&gt;AS: assignIfAbsent(7)
+    AS-&gt;&gt;DB: 배정 읽기(잠금 없음)
+    alt 필요한 STEP이 다 배정돼 있음
+        AS--&gt;&gt;MS: 그대로 반환 (쓰기 없음)
+    else 모자람 (처음 보는 매칭)
+        AS-&gt;&gt;W: assignWithLock(7) — 새 쓰기 트랜잭션(REQUIRES_NEW)
+        W-&gt;&gt;DB: match_info 행 FOR UPDATE → 배정 다시 읽기
+        W-&gt;&gt;DB: 묶음 하나 무작위 → STEP 1~3 저장
+        W--&gt;&gt;AS: 배정 3개
+    end
+    MS--&gt;&gt;FE: {currentStep:1, currentMission:&quot;...&quot;, stepN_completedAt}
+```
+
+- **읽기 먼저, 필요할 때만 잠금**: 대부분의 조회는 이미 배정된 매칭이라 잠금 없이 끝난다. 처음 보는 매칭만 잠그고 다시 확인한 뒤 채운다. 두 사람이 동시에 처음 열어도 먼저 잠근 쪽이 채우고, 나중 쪽은 잠금을 기다렸다가 이미 채워진 것을 본다(`MissionBundleAssignmentIntegrationTest`).
+- **`REQUIRES_NEW`**: 조회 메서드는 읽기 전용 트랜잭션인데 배정은 써야 한다. 그래서 배정만 **새 쓰기 트랜잭션**을 따로 열어 처리하고 커밋한다.
+- 세 STEP은 항상 **같은 묶음**에서 나온다. 예전엔 STEP별로 따로 뽑아 서로 어울리지 않는 조합이 나왔다(V6에서 묶음 방식으로 바꿈).
+
+#### 호출 흐름 ② 관리자가 완료 처리할 때
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AD as 관리자 FE
+    participant MS as MissionService.completeCurrentStep
+    participant DB as match_info
+    participant L as MissionProgressCommittedListener
+    participant R as Redis 채널
+    participant P as 참가자 FE
+    AD-&gt;&gt;MS: POST /api/admin/missions/7/complete {expectedStep:1}
+    MS-&gt;&gt;DB: match_info 행 FOR UPDATE
+    MS-&gt;&gt;MS: expectedStep == currentStep ? (다르면 409 MISSION_STEP_MISMATCH)
+    MS-&gt;&gt;DB: step1_completed_at/by 기록, currentStep 1→2
+    MS-&gt;&gt;MS: MissionProgressCommittedEvent 발행
+    MS--&gt;&gt;AD: 200 관리자용 진행
+    Note over MS,L: 커밋된 뒤에만, 별도 스레드(missionEventExecutor)에서
+    L-&gt;&gt;R: PUBLISH facecook:mission:events
+    R-&gt;&gt;P: 모든 서버 → /topic/mission/7 → 다음 STEP 문구
+```
+
+- **`expectedStep`**: 관리자가 확인 화면에서 **본** STEP을 그대로 보낸다. 서버의 현재 STEP과 다르면 409. 두 운영진이 같은 매칭을 동시에 누르거나, 네트워크 재시도로 요청이 두 번 가도 한 번만 처리된다(`MissionCompletionConcurrencyIntegrationTest`). &quot;지금 STEP을 완료해 줘&quot;로 받으면, 재시도가 다음 STEP까지 완료해 버린다.
+- **이벤트로 나눈 이유**: 실시간 알림은 커밋된 뒤에만 보내야 한다(롤백된 진행을 화면에 보여 주면 안 된다). `@TransactionalEventListener(AFTER_COMMIT)`이 그걸 보장하고, `@Async`로 관리자 응답이 Redis를 기다리지 않게 한다. 알림 발행이 실패해도 완료는 이미 커밋됐고, 참가자는 REST 재조회로 최신 상태를 본다.
+
+#### 핵심 규칙과 이유
+
+| 규칙 | 어디 | 이유 |
+| --- | --- | --- |
+| 참가자는 현재 STEP 문구만 받는다 | `MissionProgressResponse` | 다음 과제를 미리 알 수 없게 |
+| `currentStep` 4 = 모두 완료 | `MatchMission.COMPLETED_STEP` | `LAST_STEP = COMPLETED_STEP - 1`로 정의해 STEP 수를 한 곳에서 바꾼다 |
+| 관리자 목록은 매칭 하나가 배정에 실패해도 나머지는 보여 준다 | `MissionService.collectAllProgress` | 실패한 매칭은 `excluded`(`NO_TEMPLATE`/`UNKNOWN`)로 따로 알려 준다(`?includeExcluded=true`일 때). 파라미터 없으면 예전 FE와 같은 배열 |
+| 관리자 권한은 컨트롤러가 확인 | `AdminMissionController` → `AdminAuthorization.requireAdmin` | `MissionService`는 호출자가 관리자라고 전제한다 |
+
+#### 관련 파일
+
+`mission/controller/MissionController`, `AdminMissionController`, `mission/service/MissionService`, `MissionAssignmentService`, `MissionAssignmentWriter`, `MissionAuthorizationService`, `MissionTemplateNotFoundException`, `mission/entity/*`, `mission/repository/*`, `mission/event/*`, `mission/redis/*`, `mission/config/MissionRedisConfig`.
+
+#### 관련 테스트
+
+`MissionServiceTest`, `MatchMissionTest`(expectedStep 규칙), `MissionAssignmentServiceTest`·`MissionAssignmentWriterTest`(언제 잠그고 무엇을 채우는지, 같은 묶음 재사용), `MissionBundleAssignmentIntegrationTest`(V6 데이터 모양, 동시 첫 배정도 묶음 하나), `MissionCompletionConcurrencyIntegrationTest`(동시 완료 요청 중 하나만 성공), `MissionProgressCommittedIntegrationTest`(커밋 후에만 Redis 발행), `MissionEventSubscriberTest`, `MissionRedisConfigTest`.
+
+---
+
+### 3.7 푸시 (`push`)
+
+#### 무슨 기능인가
+
+앱을 닫아 둔 참가자에게 **콕 도착, 매칭 성사, 새 메시지**를 브라우저 알림으로 알려 준다. 발송 API는 없다 — 해당 일이 생길 때 서버가 스스로 보낸다. 앱을 켜 둔 사람(WebSocket 연결 중)에게는 보내지 않는다.
+
+#### 구독(알림 켜기)
+
+| API | 서비스 |
+| --- | --- |
+| `GET /api/push/vapid-public-key` | `PushSubscriptionService.getVapidPublicKey` |
+| `POST /api/push/subscribe` `{endpoint, keys:{p256dh, auth}}` | `PushSubscriptionService.subscribe` |
+| `DELETE /api/push/subscribe` | `PushSubscriptionService.unsubscribe` |
+
+1. FE가 서버의 **VAPID 공개키**를 받는다.
+2. 브라우저에 구독을 만든다(`pushManager.subscribe`). 브라우저가 &quot;이 기기로 보낼 주소(`endpoint`)와 암호화 키&quot;를 준다.
+3. 그 값을 서버에 등록한다. 같은 브라우저를 다시 등록하면 새 행 대신 키만 갱신한다(`(user_id, endpoint)` unique). 두 요청이 동시에 와서 한쪽이 unique 제약에 막히면, 진 쪽은 다시 찾아 갱신으로 이어간다(`PushSubscriptionConcurrencyIntegrationTest`).
+
+- **VAPID**: 서버가 비밀키로 푸시 요청에 서명하고, 푸시 서버(구글 FCM, 애플 등)는 구독 때 받은 공개키로 &quot;그 구독을 만든 서버가 보낸 것&quot;인지 확인한다.
+
+#### 발송 흐름
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as CookService / ChatService
+    participant N as ParticipantPushNotificationService
+    participant Pr as ChatPresenceService
+    participant D as PushDeliveryService (pushExecutor 스레드)
+    participant G as VapidWebPushGateway
+    participant PS as 푸시 서버(FCM 등)
+    S-&gt;&gt;N: cookReceived / matchCreated / chatMessageReceived
+    Note over N: 트랜잭션 중이면 커밋 뒤로 미룸(afterCommit)
+    N-&gt;&gt;Pr: isConnected(받는 사람)?
+    alt 접속 중
+        N--&gt;&gt;S: 보내지 않음
+    else 미접속
+        N-&gt;&gt;D: sendToUser (@Async — 바로 반환)
+        D-&gt;&gt;D: 구독 목록 조회(짧은 트랜잭션)
+        loop 기기마다
+            D-&gt;&gt;G: send (트랜잭션 밖, 연결 3초·응답 5초 제한)
+            G-&gt;&gt;PS: 암호화된 내용 + VAPID 서명
+            PS--&gt;&gt;G: 201 / 404·410 / 그 밖
+        end
+        D-&gt;&gt;D: 404·410이면 그 구독 삭제, 실패는 횟수만 셈
+    end
+```
+
+- **커밋 뒤에만**: 콕 저장이 롤백됐는데 &quot;콕이 왔어요&quot; 알림이 가면 안 된다. `ParticipantPushNotificationService.sendAfterCommit`이 트랜잭션이 있으면 `afterCommit`으로 미룬다.
+- **요청 스레드를 막지 않는다**: 푸시 서버 왕복은 느릴 수 있어서 `@Async(&quot;pushExecutor&quot;)`로 전용 스레드에 맡기고 바로 돌아온다. 콕 보내기 응답이 푸시를 기다리지 않는다(#82).
+- **외부 호출 동안 DB 커넥션을 쥐지 않는다**: 구독 조회·삭제는 각각 짧은 트랜잭션, HTTP 호출은 트랜잭션 밖이다(#82).
+- **제한 시간**: 푸시 서버가 응답하지 않아도 8초 안에 포기한다. 없으면 스레드 8개가 모두 묶여 알림이 쌓이다 버려진다(#113).
+- **best-effort**: 푸시가 실패해도 콕·매칭·메시지 처리는 이미 성공이다. 실패는 로그로 남기고, 실행기 대기열이 가득 차 거절된 것과 발송 실패 횟수는 `PushDeliveryMonitor`가 30초마다 한 줄로 남긴다(문제가 있을 때만).
+
+| 종류 | 언제 | 알림을 누르면 |
+| --- | --- | --- |
+| `COOK_RECEIVED` | 맞콕이 아닌 콕을 받음 | `/main` |
+| `MATCH_CREATED` | 맞콕으로 매칭 성사(두 사람 모두) | `/match/{matchId}/matched` |
+| `CHAT_MESSAGE_RECEIVED` | 새 메시지(재전송은 제외) | `/match/{matchId}` |
+
+FE 서비스 워커(`public/push-sw.js`)가 `title`·`body`로 알림을 띄우고, 누르면 `url`로 이동한다.
+
+#### 관련 파일
+
+| 파일 | 역할 |
+| --- | --- |
+| `push/service/ParticipantPushNotificationService` | 알림 3종의 진입점: 커밋 후, 접속 중이면 생략 |
+| `push/service/PushDeliveryService` | 구독별 발송(비동기), 만료 구독 삭제 |
+| `push/service/VapidWebPushGateway` (`WebPushGateway`) | 암호화·서명·HTTP 전송, 제한 시간 |
+| `push/service/PushDeliveryMonitor` | 거절·실패 집계 로그 |
+| `push/service/PushSubscriptionService`, `push/controller/PushSubscriptionController` | 구독 등록·해지 |
+| `push/entity/PushSubscription`, `push/repository/*` | `push_subscription` |
+| `config/AsyncConfig` (`pushExecutor`) | 전용 스레드 풀 |
+
+#### 관련 테스트
+
+`ParticipantPushNotificationServiceTest`(접속 중 생략, 커밋 후 발송, 실행기 거절 흡수), `PushDeliveryServiceTest`(만료 구독 삭제, 실패·제한 시간은 구독 유지), `PushDeliveryServiceAsyncIntegrationTest`(호출이 느린 발송을 기다리지 않음, 대기열 포화 시 거절), `VapidWebPushGatewayTest`(서명·암호화, 응답 없는 서버에서 제한 시간 안에 포기), `PushDeliveryMonitorTest`, `PushSubscriptionServiceTest`, `PushSubscriptionConcurrencyIntegrationTest`, `PushSubscriptionControllerTest`.
+
+---
 
 ### 3.8 신고 (`report`) — 다음 PR에서 작성
 
@@ -892,8 +1066,7 @@ flowchart LR
 
 ## 4. 실시간·비동기
 
-요청-응답(REST) 밖에서 도는 것들을 모았다. 이 장은 채팅 부분을 먼저 채웠고, 비동기 실행기와 스케줄러 전체는 미션·푸시 장과 함께 채운다.
-
+요청-응답(REST) 밖에서 도는 것들을 모았다. 
 ### 4.1 WebSocket과 STOMP 기본
 
 - **WebSocket**: 브라우저와 서버가 연결을 열어 두고 양쪽에서 아무 때나 메시지를 보낼 수 있는 통신. 5초마다 묻는 폴링과 달리 서버가 먼저 보낼 수 있다.
@@ -928,7 +1101,39 @@ flowchart LR
 - 쓰기와 만료 설정은 Lua 스크립트 하나로 원자적으로 한다. 두 명령으로 나누면 중간에 서버가 죽었을 때 만료 없는 키가 남는다.
 - 배포는 기존 컨테이너를 정상 종료(`docker stop -t 30`)하고, 스프링은 `server.shutdown: graceful`로 연결을 닫으며 해제 이벤트를 낸다.
 
-### 4.4 비동기 실행기와 스케줄러 — 미션·푸시 장과 함께 작성
+### 4.4 커밋 뒤에 실행하기: 두 가지 방법
+
+&quot;DB에 확정된 뒤에만 해야 하는 일&quot;이 여러 곳에 있다. 이 코드는 두 가지 방법을 쓴다.
+
+| 방법 | 쓰는 곳 | 모양 |
+| --- | --- | --- |
+| `TransactionSynchronizationManager.registerSynchronization(... afterCommit ...)` | 인증코드 소비(`AuthService`), 푸시(`ParticipantPushNotificationService`) | 메서드 안에서 &quot;커밋되면 이걸 실행해 줘&quot;를 직접 등록 |
+| `ApplicationEventPublisher.publishEvent` + `@TransactionalEventListener(phase = AFTER_COMMIT)` | 미션 진행 알림(`MissionService` → `MissionProgressCommittedListener`) | 이벤트를 발행하고, 받는 쪽이 커밋 뒤에 실행 |
+
+둘 다 트랜잭션이 롤백되면 실행되지 않는다. 트랜잭션이 없는 상태에서 부르면 첫 번째 방식 코드는 바로 실행하도록 직접 분기해 두었다(`consumeCodeAfterCommit`, `sendAfterCommit`).
+
+### 4.5 비동기 실행기 (`@Async`)
+
+| 실행기 | 스레드 | 대기열 | 쓰는 곳 | 가득 차면 |
+| --- | --- | --- | --- | --- |
+| `pushExecutor` | 4~8 | 200 | `PushDeliveryService.sendToUser` | 거절 → 호출부가 흡수하고 횟수만 셈(푸시 유실) |
+| `missionEventExecutor` | 2~4 | 100 | `MissionProgressCommittedListener` | 거절 — 완료는 이미 커밋돼 있고 실시간 알림만 빠진다(참가자는 재조회로 본다) |
+
+- 실행기를 나눈 이유: 느린 푸시 서버 때문에 미션 알림까지 밀리지 않게 하기 위해서다.
+- 스레드 풀 동작: 기본 스레드(4)가 다 바쁘면 대기열(200)에 쌓고, 대기열까지 차면 최대 스레드(8)까지 늘리고, 그래도 넘치면 거절한다.
+- 서버 종료 때는 진행 중인 작업을 잠깐 기다린다(`waitForTasksToCompleteOnShutdown`, 푸시 10초·미션 5초).
+- **주의**: `@Async`는 다른 빈에서 부를 때만 적용된다. 같은 클래스 안에서 `this.method()`로 부르면 그냥 동기로 돈다.
+
+### 4.6 주기 작업 (`@Scheduled`)
+
+`SchedulingConfig`의 `@EnableScheduling`이 켠다. **서버마다 각자** 돈다.
+
+| 작업 | 주기 | 하는 일 |
+| --- | --- | --- |
+| `ChatPresenceService.refreshLeases` | 30초 | 이 서버가 가진 WebSocket 세션의 접속 기록 만료를 90초 뒤로 연장 |
+| `PushDeliveryMonitor.report` | 30초 | 푸시 거절·실패 횟수, 실행기 상태를 로그로(문제가 있을 때만) |
+
+서버 기동 직후 한 번 실행되는 작업도 있다: 예전 형식 접속 기록 키 정리(`ChatPresenceService.removeLegacyKeys`, `@EventListener(ApplicationReadyEvent)`), 슈퍼 계정 생성(`SuperAccountBootstrap`, `ApplicationRunner`).
 
 ---
 
@@ -1137,12 +1342,56 @@ docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -
 
 채팅 전송은 WebSocket이라 curl로는 어렵다. facecook-fe를 로컬로 띄우고(`NEXT_PUBLIC_API_BASE_URL=http://localhost:8080`) 일반 창과 시크릿 창에서 alice·bob으로 각각 로그인해 채팅방을 열면 된다. 운영시간(09:00~18:00) 밖이면 `CLOSED`가 나므로, 서버를 띄울 때 `CHAT_OPEN_TIME=00:00 CHAT_CLOSE_TIME=23:59`를 함께 준다. 메시지를 보낸 뒤 `GET /api/matches/{matchId}/messages`로 저장된 이력을 확인할 수 있다.
 
-### 8.5 정리
+### 8.5 관리자로 미션 완료 처리해 보기
 
-실습 데이터를 지우려면(자식 행부터):
+8.3에서 만든 매칭으로 이어서 한다. `{matchId}`는 8.3의 5단계 응답에 있다.
+
+1. 관리자 계정을 넣고 로그인한다(비밀번호 `Test1234!`).
 
 ```bash
-docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -e &quot;DELETE c FROM cook c JOIN users u ON c.sender_id = u.user_id WHERE u.email IN (&#x27;alice@local.test&#x27;,&#x27;bob@local.test&#x27;); DELETE m FROM message m JOIN users u ON m.sender_id = u.user_id WHERE u.email IN (&#x27;alice@local.test&#x27;,&#x27;bob@local.test&#x27;); DELETE mi FROM match_info mi JOIN users u ON mi.user_a_id = u.user_id WHERE u.email IN (&#x27;alice@local.test&#x27;,&#x27;bob@local.test&#x27;); DELETE p FROM profile p JOIN users u ON p.user_id = u.user_id WHERE u.email IN (&#x27;alice@local.test&#x27;,&#x27;bob@local.test&#x27;); DELETE FROM users WHERE email IN (&#x27;alice@local.test&#x27;,&#x27;bob@local.test&#x27;);&quot;
+docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -e &quot;INSERT INTO users (email, password_hash, role, status, created_at) VALUES (&#x27;admin@local.test&#x27;, &#x27;\$2a\$10\$ckE3XhuLbLV5fdgImDwIqedeZMd.x8V1iXamUy0fkcfhkfdBsgBu6&#x27;, &#x27;admin&#x27;, &#x27;active&#x27;, NOW());&quot;
+```
+
+```bash
+curl -s -c /tmp/admin.txt -X POST localhost:8080/api/auth/login -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;email&quot;:&quot;admin@local.test&quot;,&quot;password&quot;:&quot;Test1234!&quot;}&#x27;
+```
+
+2. alice가 미션을 본다 → `&quot;currentStep&quot;:1`, `&quot;currentMission&quot;:&quot;...&quot;`. 처음 보는 매칭이라 이 조회에서 묶음 하나가 배정됐다(3.6장 흐름 ①).
+
+```bash
+curl -s -b /tmp/alice.txt localhost:8080/api/matches/{matchId}/mission
+```
+
+3. alice가 관리자 API를 부르면 403 `FORBIDDEN` — 관리자 컨트롤러가 첫 줄에서 역할을 확인한다.
+
+```bash
+curl -s -b /tmp/alice.txt -X POST localhost:8080/api/admin/missions/{matchId}/complete -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;expectedStep&quot;:1}&#x27;
+```
+
+4. 관리자가 STEP 1을 완료한다 → `&quot;currentStep&quot;:2`, `&quot;step1CompletedBy&quot;:{관리자 userId}`. 같은 명령을 한 번 더 보내면 409 `MISSION_STEP_MISMATCH`다(이미 처리된 STEP — 3.6장 흐름 ②).
+
+```bash
+curl -s -b /tmp/admin.txt -X POST localhost:8080/api/admin/missions/{matchId}/complete -H &quot;Content-Type: application/json&quot; -d &#x27;{&quot;expectedStep&quot;:1}&#x27;
+```
+
+5. alice가 다시 보면 STEP 2 문구가 나온다. 채팅방을 FE로 열어 두었다면 WebSocket(`/topic/mission/{matchId}`)으로 새로고침 없이 바뀐다.
+
+```bash
+curl -s -b /tmp/alice.txt localhost:8080/api/matches/{matchId}/mission
+```
+
+6. 배정과 진행을 DB에서 본다 → 배정 3행이 같은 묶음의 템플릿이고, `match_info.current_step`이 2다.
+
+```bash
+docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -e &quot;SELECT step, mission_template_id FROM match_mission_assignment WHERE match_id = {matchId}; SELECT current_step, step1_completed_at, step1_completed_by FROM match_info WHERE match_id = {matchId};&quot;
+```
+
+### 8.6 정리
+
+실습 데이터(이메일이 `@local.test`로 끝나는 계정과 그 콕·메시지·미션 배정·매칭·프로필)를 자식 행부터 지운다.
+
+```bash
+docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -e &quot;DELETE c FROM cook c JOIN users u ON c.sender_id = u.user_id WHERE u.email LIKE &#x27;%@local.test&#x27;; DELETE m FROM message m JOIN users u ON m.sender_id = u.user_id WHERE u.email LIKE &#x27;%@local.test&#x27;; DELETE a FROM match_mission_assignment a JOIN match_info mi ON a.match_id = mi.match_id JOIN users u ON mi.user_a_id = u.user_id WHERE u.email LIKE &#x27;%@local.test&#x27;; DELETE mi FROM match_info mi JOIN users u ON mi.user_a_id = u.user_id WHERE u.email LIKE &#x27;%@local.test&#x27;; DELETE p FROM profile p JOIN users u ON p.user_id = u.user_id WHERE u.email LIKE &#x27;%@local.test&#x27;; DELETE FROM users WHERE email LIKE &#x27;%@local.test&#x27;;&quot;
 ```
 
 ---
@@ -1169,6 +1418,9 @@ docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -
 | STOMP | WebSocket 위에서 보내기(SEND)·구독(SUBSCRIBE)을 표현하는 약속 |
 | Pub/Sub | 발행하면 구독 중인 쪽이 모두 받는 방송. 저장하지 않는다(Redis 채널) |
 | 하트비트 | 연결이 살아 있는지 확인하려고 주기적으로 주고받는 신호(10초) |
+| 미션 묶음(bundle) | STEP 1~3이 한 세트로 만들어진 미션 문구 묶음. 매칭 하나에 묶음 하나가 통째로 배정된다 |
+| VAPID | 웹 푸시에서 서버가 비밀키로 요청에 서명하고, 푸시 서버가 공개키로 확인하는 방식 |
+| best-effort | 최선을 다하지만 실패해도 원래 작업을 실패로 만들지 않는 부가 처리(푸시, 실시간 발행) |
 </pre></main>
 </div>
 <button id="menu-toggle" type="button">목차</button>
@@ -1196,9 +1448,9 @@ docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -
 | 2 | 공통 뼈대 (요청 하나가 지나가는 길, 로그인 확인, 오류, 시각, 트랜잭션, 설정, 문법) | 작성 |
 | 3.1~3.2 | 가입·로그인, 프로필 | 작성 |
 | 3.3~3.5 | 콕, 매칭, 채팅 | 작성 |
-| 3.6~3.7 | 미션, 푸시 | 다음 PR |
+| 3.6~3.7 | 미션, 푸시 | 작성 |
 | 3.8~3.9 | 신고, 관리자·슈퍼 계정 | 다음 PR |
-| 4 | 실시간·비동기 | WebSocket·Redis·접속 기록 작성, 실행기·스케줄러는 다음 PR |
+| 4 | 실시간·비동기 | 작성 |
 | 5~9 | 데이터, 배포·운영, 테스트, 따라 해보기, 용어집 | 작성(기능 장이 늘면 보강) |
 
 ---
@@ -1264,8 +1516,8 @@ flowchart LR
 | `cook` | 콕 보내기·받기·취소·거절, 하루 한도 | 3.3 |
 | `match` | 매칭 목록·상세, 읽음 처리 | 3.4 |
 | `chat` | 채팅 REST·WebSocket, Redis 중계, 접속 기록 | 3.5 |
-| `mission` | 매칭별 미션 배정·진행, 관리자 완료 처리 | 3.6 (다음 PR) |
-| `push` | 웹 푸시 구독·발송 | 3.7 (다음 PR) |
+| `mission` | 매칭별 미션 배정·진행, 관리자 완료 처리 | 3.6 |
+| `push` | 웹 푸시 구독·발송 | 3.7 |
 | `report` | 신고와 관리자 처리(정지) | 3.8 (다음 PR) |
 | `admin` | 관리자 통계 | 3.9 (다음 PR) |
 | `superaccount` | 슈퍼 계정 생성·전체 열람 | 3.9 (다음 PR) |
@@ -1993,9 +2245,183 @@ flowchart LR
 
 ---
 
-### 3.6 미션 (`mission`) — 다음 PR에서 작성
+### 3.6 미션 (`mission`)
 
-### 3.7 푸시 (`push`) — 다음 PR에서 작성
+#### 무슨 기능인가
+
+매칭된 두 사람이 부스에서 함께 하는 3단계 과제다. 매칭마다 미션 **묶음** 하나(STEP 1~3 세트)가 무작위로 배정되고, 참가자는 지금 STEP의 문구만 본다. 과제를 했는지는 **운영진(관리자)이 부스에서 직접 확인하고** 완료 처리한다 — 참가자가 스스로 "완료"를 누르는 API는 없다. 완료되면 참가자 화면이 실시간으로 다음 STEP으로 바뀐다.
+
+#### API
+
+| API | 서비스 | 누가 |
+| --- | --- | --- |
+| `GET /api/matches/{matchId}/mission` | `MissionService.getProgressAndAssignIfMissing` | 매칭 당사자 |
+| `GET /api/admin/missions[?includeExcluded=true]` | `MissionService.getAllProgress` / `getAllProgressWithExclusions` | 관리자 |
+| `POST /api/admin/missions/{matchId}/complete` `{expectedStep}` | `MissionService.completeCurrentStep` | 관리자 |
+| `SUBSCRIBE /topic/mission/{matchId}` (WebSocket) | `MissionEventSubscriber`가 전달 | 매칭 당사자 |
+
+#### 테이블 두 개, 엔티티 셋
+
+| 엔티티 | 테이블 | 뜻 |
+| --- | --- | --- |
+| `MatchMission` | `match_info` | 매칭의 미션 진행(현재 STEP, STEP별 완료 시각·처리자). **매칭의 `MatchInfo`와 같은 행**을 미션 컬럼만 보는 엔티티다 |
+| `MatchMissionAssignment` | `match_mission_assignment` | 매칭에 배정된 STEP별 미션(매칭당 3행) |
+| `MissionTemplate` | `mission_template` | 미션 문구 원본. 묶음(bundle) 단위, V6 마이그레이션이 넣은 고정 데이터 |
+
+`MatchInfo`는 읽음 시각을, `MatchMission`은 진행 단계를 다루고 서로의 컬럼은 매핑하지 않는다. 엔티티가 둘이라 "당사자인가" 검사도 `ChatAuthorizationService`(→`MatchInfo`)와 `MissionAuthorizationService`(→`MatchMission`)에 똑같은 모양으로 따로 있다.
+
+#### 호출 흐름 ① 참가자가 미션을 처음 볼 때: 필요할 때 한 번만 배정
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FE as 참가자 FE
+    participant MS as MissionService
+    participant AS as MissionAssignmentService
+    participant W as MissionAssignmentWriter
+    participant DB as match_info / 배정 / 템플릿
+    FE->>MS: GET /api/matches/7/mission
+    MS->>MS: 당사자인가(아니면 403)
+    MS->>AS: assignIfAbsent(7)
+    AS->>DB: 배정 읽기(잠금 없음)
+    alt 필요한 STEP이 다 배정돼 있음
+        AS-->>MS: 그대로 반환 (쓰기 없음)
+    else 모자람 (처음 보는 매칭)
+        AS->>W: assignWithLock(7) — 새 쓰기 트랜잭션(REQUIRES_NEW)
+        W->>DB: match_info 행 FOR UPDATE → 배정 다시 읽기
+        W->>DB: 묶음 하나 무작위 → STEP 1~3 저장
+        W-->>AS: 배정 3개
+    end
+    MS-->>FE: {currentStep:1, currentMission:"...", stepN_completedAt}
+```
+
+- **읽기 먼저, 필요할 때만 잠금**: 대부분의 조회는 이미 배정된 매칭이라 잠금 없이 끝난다. 처음 보는 매칭만 잠그고 다시 확인한 뒤 채운다. 두 사람이 동시에 처음 열어도 먼저 잠근 쪽이 채우고, 나중 쪽은 잠금을 기다렸다가 이미 채워진 것을 본다(`MissionBundleAssignmentIntegrationTest`).
+- **`REQUIRES_NEW`**: 조회 메서드는 읽기 전용 트랜잭션인데 배정은 써야 한다. 그래서 배정만 **새 쓰기 트랜잭션**을 따로 열어 처리하고 커밋한다.
+- 세 STEP은 항상 **같은 묶음**에서 나온다. 예전엔 STEP별로 따로 뽑아 서로 어울리지 않는 조합이 나왔다(V6에서 묶음 방식으로 바꿈).
+
+#### 호출 흐름 ② 관리자가 완료 처리할 때
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AD as 관리자 FE
+    participant MS as MissionService.completeCurrentStep
+    participant DB as match_info
+    participant L as MissionProgressCommittedListener
+    participant R as Redis 채널
+    participant P as 참가자 FE
+    AD->>MS: POST /api/admin/missions/7/complete {expectedStep:1}
+    MS->>DB: match_info 행 FOR UPDATE
+    MS->>MS: expectedStep == currentStep ? (다르면 409 MISSION_STEP_MISMATCH)
+    MS->>DB: step1_completed_at/by 기록, currentStep 1→2
+    MS->>MS: MissionProgressCommittedEvent 발행
+    MS-->>AD: 200 관리자용 진행
+    Note over MS,L: 커밋된 뒤에만, 별도 스레드(missionEventExecutor)에서
+    L->>R: PUBLISH facecook:mission:events
+    R->>P: 모든 서버 → /topic/mission/7 → 다음 STEP 문구
+```
+
+- **`expectedStep`**: 관리자가 확인 화면에서 **본** STEP을 그대로 보낸다. 서버의 현재 STEP과 다르면 409. 두 운영진이 같은 매칭을 동시에 누르거나, 네트워크 재시도로 요청이 두 번 가도 한 번만 처리된다(`MissionCompletionConcurrencyIntegrationTest`). "지금 STEP을 완료해 줘"로 받으면, 재시도가 다음 STEP까지 완료해 버린다.
+- **이벤트로 나눈 이유**: 실시간 알림은 커밋된 뒤에만 보내야 한다(롤백된 진행을 화면에 보여 주면 안 된다). `@TransactionalEventListener(AFTER_COMMIT)`이 그걸 보장하고, `@Async`로 관리자 응답이 Redis를 기다리지 않게 한다. 알림 발행이 실패해도 완료는 이미 커밋됐고, 참가자는 REST 재조회로 최신 상태를 본다.
+
+#### 핵심 규칙과 이유
+
+| 규칙 | 어디 | 이유 |
+| --- | --- | --- |
+| 참가자는 현재 STEP 문구만 받는다 | `MissionProgressResponse` | 다음 과제를 미리 알 수 없게 |
+| `currentStep` 4 = 모두 완료 | `MatchMission.COMPLETED_STEP` | `LAST_STEP = COMPLETED_STEP - 1`로 정의해 STEP 수를 한 곳에서 바꾼다 |
+| 관리자 목록은 매칭 하나가 배정에 실패해도 나머지는 보여 준다 | `MissionService.collectAllProgress` | 실패한 매칭은 `excluded`(`NO_TEMPLATE`/`UNKNOWN`)로 따로 알려 준다(`?includeExcluded=true`일 때). 파라미터 없으면 예전 FE와 같은 배열 |
+| 관리자 권한은 컨트롤러가 확인 | `AdminMissionController` → `AdminAuthorization.requireAdmin` | `MissionService`는 호출자가 관리자라고 전제한다 |
+
+#### 관련 파일
+
+`mission/controller/MissionController`, `AdminMissionController`, `mission/service/MissionService`, `MissionAssignmentService`, `MissionAssignmentWriter`, `MissionAuthorizationService`, `MissionTemplateNotFoundException`, `mission/entity/*`, `mission/repository/*`, `mission/event/*`, `mission/redis/*`, `mission/config/MissionRedisConfig`.
+
+#### 관련 테스트
+
+`MissionServiceTest`, `MatchMissionTest`(expectedStep 규칙), `MissionAssignmentServiceTest`·`MissionAssignmentWriterTest`(언제 잠그고 무엇을 채우는지, 같은 묶음 재사용), `MissionBundleAssignmentIntegrationTest`(V6 데이터 모양, 동시 첫 배정도 묶음 하나), `MissionCompletionConcurrencyIntegrationTest`(동시 완료 요청 중 하나만 성공), `MissionProgressCommittedIntegrationTest`(커밋 후에만 Redis 발행), `MissionEventSubscriberTest`, `MissionRedisConfigTest`.
+
+---
+
+### 3.7 푸시 (`push`)
+
+#### 무슨 기능인가
+
+앱을 닫아 둔 참가자에게 **콕 도착, 매칭 성사, 새 메시지**를 브라우저 알림으로 알려 준다. 발송 API는 없다 — 해당 일이 생길 때 서버가 스스로 보낸다. 앱을 켜 둔 사람(WebSocket 연결 중)에게는 보내지 않는다.
+
+#### 구독(알림 켜기)
+
+| API | 서비스 |
+| --- | --- |
+| `GET /api/push/vapid-public-key` | `PushSubscriptionService.getVapidPublicKey` |
+| `POST /api/push/subscribe` `{endpoint, keys:{p256dh, auth}}` | `PushSubscriptionService.subscribe` |
+| `DELETE /api/push/subscribe` | `PushSubscriptionService.unsubscribe` |
+
+1. FE가 서버의 **VAPID 공개키**를 받는다.
+2. 브라우저에 구독을 만든다(`pushManager.subscribe`). 브라우저가 "이 기기로 보낼 주소(`endpoint`)와 암호화 키"를 준다.
+3. 그 값을 서버에 등록한다. 같은 브라우저를 다시 등록하면 새 행 대신 키만 갱신한다(`(user_id, endpoint)` unique). 두 요청이 동시에 와서 한쪽이 unique 제약에 막히면, 진 쪽은 다시 찾아 갱신으로 이어간다(`PushSubscriptionConcurrencyIntegrationTest`).
+
+- **VAPID**: 서버가 비밀키로 푸시 요청에 서명하고, 푸시 서버(구글 FCM, 애플 등)는 구독 때 받은 공개키로 "그 구독을 만든 서버가 보낸 것"인지 확인한다.
+
+#### 발송 흐름
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as CookService / ChatService
+    participant N as ParticipantPushNotificationService
+    participant Pr as ChatPresenceService
+    participant D as PushDeliveryService (pushExecutor 스레드)
+    participant G as VapidWebPushGateway
+    participant PS as 푸시 서버(FCM 등)
+    S->>N: cookReceived / matchCreated / chatMessageReceived
+    Note over N: 트랜잭션 중이면 커밋 뒤로 미룸(afterCommit)
+    N->>Pr: isConnected(받는 사람)?
+    alt 접속 중
+        N-->>S: 보내지 않음
+    else 미접속
+        N->>D: sendToUser (@Async — 바로 반환)
+        D->>D: 구독 목록 조회(짧은 트랜잭션)
+        loop 기기마다
+            D->>G: send (트랜잭션 밖, 연결 3초·응답 5초 제한)
+            G->>PS: 암호화된 내용 + VAPID 서명
+            PS-->>G: 201 / 404·410 / 그 밖
+        end
+        D->>D: 404·410이면 그 구독 삭제, 실패는 횟수만 셈
+    end
+```
+
+- **커밋 뒤에만**: 콕 저장이 롤백됐는데 "콕이 왔어요" 알림이 가면 안 된다. `ParticipantPushNotificationService.sendAfterCommit`이 트랜잭션이 있으면 `afterCommit`으로 미룬다.
+- **요청 스레드를 막지 않는다**: 푸시 서버 왕복은 느릴 수 있어서 `@Async("pushExecutor")`로 전용 스레드에 맡기고 바로 돌아온다. 콕 보내기 응답이 푸시를 기다리지 않는다(#82).
+- **외부 호출 동안 DB 커넥션을 쥐지 않는다**: 구독 조회·삭제는 각각 짧은 트랜잭션, HTTP 호출은 트랜잭션 밖이다(#82).
+- **제한 시간**: 푸시 서버가 응답하지 않아도 8초 안에 포기한다. 없으면 스레드 8개가 모두 묶여 알림이 쌓이다 버려진다(#113).
+- **best-effort**: 푸시가 실패해도 콕·매칭·메시지 처리는 이미 성공이다. 실패는 로그로 남기고, 실행기 대기열이 가득 차 거절된 것과 발송 실패 횟수는 `PushDeliveryMonitor`가 30초마다 한 줄로 남긴다(문제가 있을 때만).
+
+| 종류 | 언제 | 알림을 누르면 |
+| --- | --- | --- |
+| `COOK_RECEIVED` | 맞콕이 아닌 콕을 받음 | `/main` |
+| `MATCH_CREATED` | 맞콕으로 매칭 성사(두 사람 모두) | `/match/{matchId}/matched` |
+| `CHAT_MESSAGE_RECEIVED` | 새 메시지(재전송은 제외) | `/match/{matchId}` |
+
+FE 서비스 워커(`public/push-sw.js`)가 `title`·`body`로 알림을 띄우고, 누르면 `url`로 이동한다.
+
+#### 관련 파일
+
+| 파일 | 역할 |
+| --- | --- |
+| `push/service/ParticipantPushNotificationService` | 알림 3종의 진입점: 커밋 후, 접속 중이면 생략 |
+| `push/service/PushDeliveryService` | 구독별 발송(비동기), 만료 구독 삭제 |
+| `push/service/VapidWebPushGateway` (`WebPushGateway`) | 암호화·서명·HTTP 전송, 제한 시간 |
+| `push/service/PushDeliveryMonitor` | 거절·실패 집계 로그 |
+| `push/service/PushSubscriptionService`, `push/controller/PushSubscriptionController` | 구독 등록·해지 |
+| `push/entity/PushSubscription`, `push/repository/*` | `push_subscription` |
+| `config/AsyncConfig` (`pushExecutor`) | 전용 스레드 풀 |
+
+#### 관련 테스트
+
+`ParticipantPushNotificationServiceTest`(접속 중 생략, 커밋 후 발송, 실행기 거절 흡수), `PushDeliveryServiceTest`(만료 구독 삭제, 실패·제한 시간은 구독 유지), `PushDeliveryServiceAsyncIntegrationTest`(호출이 느린 발송을 기다리지 않음, 대기열 포화 시 거절), `VapidWebPushGatewayTest`(서명·암호화, 응답 없는 서버에서 제한 시간 안에 포기), `PushDeliveryMonitorTest`, `PushSubscriptionServiceTest`, `PushSubscriptionConcurrencyIntegrationTest`, `PushSubscriptionControllerTest`.
+
+---
 
 ### 3.8 신고 (`report`) — 다음 PR에서 작성
 
@@ -2005,8 +2431,7 @@ flowchart LR
 
 ## 4. 실시간·비동기
 
-요청-응답(REST) 밖에서 도는 것들을 모았다. 이 장은 채팅 부분을 먼저 채웠고, 비동기 실행기와 스케줄러 전체는 미션·푸시 장과 함께 채운다.
-
+요청-응답(REST) 밖에서 도는 것들을 모았다. 
 ### 4.1 WebSocket과 STOMP 기본
 
 - **WebSocket**: 브라우저와 서버가 연결을 열어 두고 양쪽에서 아무 때나 메시지를 보낼 수 있는 통신. 5초마다 묻는 폴링과 달리 서버가 먼저 보낼 수 있다.
@@ -2041,7 +2466,39 @@ flowchart LR
 - 쓰기와 만료 설정은 Lua 스크립트 하나로 원자적으로 한다. 두 명령으로 나누면 중간에 서버가 죽었을 때 만료 없는 키가 남는다.
 - 배포는 기존 컨테이너를 정상 종료(`docker stop -t 30`)하고, 스프링은 `server.shutdown: graceful`로 연결을 닫으며 해제 이벤트를 낸다.
 
-### 4.4 비동기 실행기와 스케줄러 — 미션·푸시 장과 함께 작성
+### 4.4 커밋 뒤에 실행하기: 두 가지 방법
+
+"DB에 확정된 뒤에만 해야 하는 일"이 여러 곳에 있다. 이 코드는 두 가지 방법을 쓴다.
+
+| 방법 | 쓰는 곳 | 모양 |
+| --- | --- | --- |
+| `TransactionSynchronizationManager.registerSynchronization(... afterCommit ...)` | 인증코드 소비(`AuthService`), 푸시(`ParticipantPushNotificationService`) | 메서드 안에서 "커밋되면 이걸 실행해 줘"를 직접 등록 |
+| `ApplicationEventPublisher.publishEvent` + `@TransactionalEventListener(phase = AFTER_COMMIT)` | 미션 진행 알림(`MissionService` → `MissionProgressCommittedListener`) | 이벤트를 발행하고, 받는 쪽이 커밋 뒤에 실행 |
+
+둘 다 트랜잭션이 롤백되면 실행되지 않는다. 트랜잭션이 없는 상태에서 부르면 첫 번째 방식 코드는 바로 실행하도록 직접 분기해 두었다(`consumeCodeAfterCommit`, `sendAfterCommit`).
+
+### 4.5 비동기 실행기 (`@Async`)
+
+| 실행기 | 스레드 | 대기열 | 쓰는 곳 | 가득 차면 |
+| --- | --- | --- | --- | --- |
+| `pushExecutor` | 4~8 | 200 | `PushDeliveryService.sendToUser` | 거절 → 호출부가 흡수하고 횟수만 셈(푸시 유실) |
+| `missionEventExecutor` | 2~4 | 100 | `MissionProgressCommittedListener` | 거절 — 완료는 이미 커밋돼 있고 실시간 알림만 빠진다(참가자는 재조회로 본다) |
+
+- 실행기를 나눈 이유: 느린 푸시 서버 때문에 미션 알림까지 밀리지 않게 하기 위해서다.
+- 스레드 풀 동작: 기본 스레드(4)가 다 바쁘면 대기열(200)에 쌓고, 대기열까지 차면 최대 스레드(8)까지 늘리고, 그래도 넘치면 거절한다.
+- 서버 종료 때는 진행 중인 작업을 잠깐 기다린다(`waitForTasksToCompleteOnShutdown`, 푸시 10초·미션 5초).
+- **주의**: `@Async`는 다른 빈에서 부를 때만 적용된다. 같은 클래스 안에서 `this.method()`로 부르면 그냥 동기로 돈다.
+
+### 4.6 주기 작업 (`@Scheduled`)
+
+`SchedulingConfig`의 `@EnableScheduling`이 켠다. **서버마다 각자** 돈다.
+
+| 작업 | 주기 | 하는 일 |
+| --- | --- | --- |
+| `ChatPresenceService.refreshLeases` | 30초 | 이 서버가 가진 WebSocket 세션의 접속 기록 만료를 90초 뒤로 연장 |
+| `PushDeliveryMonitor.report` | 30초 | 푸시 거절·실패 횟수, 실행기 상태를 로그로(문제가 있을 때만) |
+
+서버 기동 직후 한 번 실행되는 작업도 있다: 예전 형식 접속 기록 키 정리(`ChatPresenceService.removeLegacyKeys`, `@EventListener(ApplicationReadyEvent)`), 슈퍼 계정 생성(`SuperAccountBootstrap`, `ApplicationRunner`).
 
 ---
 
@@ -2250,12 +2707,56 @@ docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -
 
 채팅 전송은 WebSocket이라 curl로는 어렵다. facecook-fe를 로컬로 띄우고(`NEXT_PUBLIC_API_BASE_URL=http://localhost:8080`) 일반 창과 시크릿 창에서 alice·bob으로 각각 로그인해 채팅방을 열면 된다. 운영시간(09:00~18:00) 밖이면 `CLOSED`가 나므로, 서버를 띄울 때 `CHAT_OPEN_TIME=00:00 CHAT_CLOSE_TIME=23:59`를 함께 준다. 메시지를 보낸 뒤 `GET /api/matches/{matchId}/messages`로 저장된 이력을 확인할 수 있다.
 
-### 8.5 정리
+### 8.5 관리자로 미션 완료 처리해 보기
 
-실습 데이터를 지우려면(자식 행부터):
+8.3에서 만든 매칭으로 이어서 한다. `{matchId}`는 8.3의 5단계 응답에 있다.
+
+1. 관리자 계정을 넣고 로그인한다(비밀번호 `Test1234!`).
 
 ```bash
-docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -e "DELETE c FROM cook c JOIN users u ON c.sender_id = u.user_id WHERE u.email IN ('alice@local.test','bob@local.test'); DELETE m FROM message m JOIN users u ON m.sender_id = u.user_id WHERE u.email IN ('alice@local.test','bob@local.test'); DELETE mi FROM match_info mi JOIN users u ON mi.user_a_id = u.user_id WHERE u.email IN ('alice@local.test','bob@local.test'); DELETE p FROM profile p JOIN users u ON p.user_id = u.user_id WHERE u.email IN ('alice@local.test','bob@local.test'); DELETE FROM users WHERE email IN ('alice@local.test','bob@local.test');"
+docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -e "INSERT INTO users (email, password_hash, role, status, created_at) VALUES ('admin@local.test', '\$2a\$10\$ckE3XhuLbLV5fdgImDwIqedeZMd.x8V1iXamUy0fkcfhkfdBsgBu6', 'admin', 'active', NOW());"
+```
+
+```bash
+curl -s -c /tmp/admin.txt -X POST localhost:8080/api/auth/login -H "Content-Type: application/json" -d '{"email":"admin@local.test","password":"Test1234!"}'
+```
+
+2. alice가 미션을 본다 → `"currentStep":1`, `"currentMission":"..."`. 처음 보는 매칭이라 이 조회에서 묶음 하나가 배정됐다(3.6장 흐름 ①).
+
+```bash
+curl -s -b /tmp/alice.txt localhost:8080/api/matches/{matchId}/mission
+```
+
+3. alice가 관리자 API를 부르면 403 `FORBIDDEN` — 관리자 컨트롤러가 첫 줄에서 역할을 확인한다.
+
+```bash
+curl -s -b /tmp/alice.txt -X POST localhost:8080/api/admin/missions/{matchId}/complete -H "Content-Type: application/json" -d '{"expectedStep":1}'
+```
+
+4. 관리자가 STEP 1을 완료한다 → `"currentStep":2`, `"step1CompletedBy":{관리자 userId}`. 같은 명령을 한 번 더 보내면 409 `MISSION_STEP_MISMATCH`다(이미 처리된 STEP — 3.6장 흐름 ②).
+
+```bash
+curl -s -b /tmp/admin.txt -X POST localhost:8080/api/admin/missions/{matchId}/complete -H "Content-Type: application/json" -d '{"expectedStep":1}'
+```
+
+5. alice가 다시 보면 STEP 2 문구가 나온다. 채팅방을 FE로 열어 두었다면 WebSocket(`/topic/mission/{matchId}`)으로 새로고침 없이 바뀐다.
+
+```bash
+curl -s -b /tmp/alice.txt localhost:8080/api/matches/{matchId}/mission
+```
+
+6. 배정과 진행을 DB에서 본다 → 배정 3행이 같은 묶음의 템플릿이고, `match_info.current_step`이 2다.
+
+```bash
+docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -e "SELECT step, mission_template_id FROM match_mission_assignment WHERE match_id = {matchId}; SELECT current_step, step1_completed_at, step1_completed_by FROM match_info WHERE match_id = {matchId};"
+```
+
+### 8.6 정리
+
+실습 데이터(이메일이 `@local.test`로 끝나는 계정과 그 콕·메시지·미션 배정·매칭·프로필)를 자식 행부터 지운다.
+
+```bash
+docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -e "DELETE c FROM cook c JOIN users u ON c.sender_id = u.user_id WHERE u.email LIKE '%@local.test'; DELETE m FROM message m JOIN users u ON m.sender_id = u.user_id WHERE u.email LIKE '%@local.test'; DELETE a FROM match_mission_assignment a JOIN match_info mi ON a.match_id = mi.match_id JOIN users u ON mi.user_a_id = u.user_id WHERE u.email LIKE '%@local.test'; DELETE mi FROM match_info mi JOIN users u ON mi.user_a_id = u.user_id WHERE u.email LIKE '%@local.test'; DELETE p FROM profile p JOIN users u ON p.user_id = u.user_id WHERE u.email LIKE '%@local.test'; DELETE FROM users WHERE email LIKE '%@local.test';"
 ```
 
 ---
@@ -2282,6 +2783,9 @@ docker exec facecook-be-mysql-1 mysql -ufacecook -plocal-dev-password facecook -
 | STOMP | WebSocket 위에서 보내기(SEND)·구독(SUBSCRIBE)을 표현하는 약속 |
 | Pub/Sub | 발행하면 구독 중인 쪽이 모두 받는 방송. 저장하지 않는다(Redis 채널) |
 | 하트비트 | 연결이 살아 있는지 확인하려고 주기적으로 주고받는 신호(10초) |
+| 미션 묶음(bundle) | STEP 1~3이 한 세트로 만들어진 미션 문구 묶음. 매칭 하나에 묶음 하나가 통째로 배정된다 |
+| VAPID | 웹 푸시에서 서버가 비밀키로 요청에 서명하고, 푸시 서버가 공개키로 확인하는 방식 |
+| best-effort | 최선을 다하지만 실패해도 원래 작업을 실패로 만들지 않는 부가 처리(푸시, 실시간 발행) |
 </script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
