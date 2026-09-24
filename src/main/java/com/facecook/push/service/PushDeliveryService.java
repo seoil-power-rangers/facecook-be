@@ -7,9 +7,8 @@ import com.facecook.push.entity.PushSubscription;
 import com.facecook.push.repository.PushSubscriptionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 웹 푸시를 실제로 내보내는 최하단 계층. best-effort로 동작한다 — 이
@@ -33,17 +32,22 @@ public class PushDeliveryService {
      *
      * <p>전제조건: 없음(구독이 하나도 없으면 아무 일도 안 하고 끝).</p>
      *
-     * <p>부작용: 구독마다 개별로 발송을 시도한다 — 하나가 실패해도
+     * <p>부작용: 전용 실행기({@code pushExecutor})에서 요청 스레드와
+     * 분리돼 비동기로 돈다 — 콕·채팅 전송의 응답이 웹 푸시 HTTP 왕복을
+     * 기다리지 않는다(facecook-be#82). 구독 조회와 만료 구독 삭제는 각각
+     * Spring Data가 알아서 여는 짧은 트랜잭션이고, 그 사이 웹 푸시 HTTP
+     * 호출은 트랜잭션 밖에서 돈다 — DB 커넥션을 외부 호출 동안 붙들고
+     * 있지 않는다. 구독마다 개별로 발송을 시도해서 하나가 실패해도
      * 나머지는 계속 보낸다. 만료된 구독(브라우저가 알림 권한을 끊는 등)은
-     * 응답에서 확인되면 그 자리에서 DB에서 삭제한다. 호출자가
-     * afterCommit 콜백처럼 트랜잭션이 끝난 시점에서 부르는 경우가 많아서
-     * 별도 새 트랜잭션({@code REQUIRES_NEW})으로 돈다 — 그래야 구독
-     * 삭제 같은 DB 작업 자체가 가능하다.</p>
+     * 응답에서 확인되면 그 자리에서 DB에서 삭제한다.</p>
      *
      * <p>예외 없음 — 페이로드 직렬화 실패, 개별 발송 실패 전부 로그만
-     * 남기고 삼킨다.</p>
+     * 남기고 삼킨다. 전용 실행기 큐가 가득 차면 이 호출 자체가
+     * {@link java.util.concurrent.RejectedExecutionException}을 던질 수
+     * 있다 — 호출부({@link ParticipantPushNotificationService})가
+     * 흡수한다.</p>
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Async("pushExecutor")
     public void sendToUser(Long userId, PushNotificationPayload payload) {
         String serializedPayload;
         try {
