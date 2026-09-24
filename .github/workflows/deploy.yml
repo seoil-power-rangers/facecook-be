@@ -159,8 +159,11 @@ jobs:
             #
             # non-blocking 모드는 로그 그룹·권한이 없어도 컨테이너를 그대로 띄우고 로그만 조용히 버린다. 그래서
             # 기존 컨테이너를 지우기 전에, 같은 설정을 blocking 모드(기본값)로 한 임시 컨테이너를 먼저 띄워 본다.
-            # blocking 모드는 로그 스트림을 못 만들면 docker run이 바로 실패한다(exit 125). 실패하면 기존
-            # 컨테이너를 그대로 두고 배포를 멈춘다 — 설정이 틀린 채 로그가 사라지는 배포를 막는다.
+            # blocking 모드는 로그 스트림을 못 만들면 docker run이 바로 실패한다(exit 125). 다만 도커는 시작할 때
+            # 스트림 생성만 확인하고, 실제 로그 쓰기(PutLogEvents)는 뒤에서 하며 실패해도 종료 코드로 알려 주지
+            # 않는다. 그래서 이어서 같은 인스턴스 역할로 AWS CLI가 그 스트림에 한 줄을 직접 써 본다. 둘 중
+            # 하나라도 실패하면 기존 컨테이너를 그대로 두고 배포를 멈춘다 — 설정이 틀린 채 로그가 사라지는
+            # 배포를 막는다.
             #
             # 마지막 세 줄이 서버 안 확인이다: 실행 중인 컨테이너가 방금 배포한 이미지에서 만들어졌는지,
             # 프로세스가 떠 있는지, 애플리케이션이 UP을 응답할 때까지(최대 약 3분) 기다린다. 하나라도
@@ -173,6 +176,7 @@ jobs:
                 "docker pull \($image) || exit 1",
                 "command -v curl >/dev/null || { echo \"서버에 curl이 없어 기동 확인을 할 수 없다\" >&2; exit 1; }",
                 "docker run --rm --log-driver awslogs --log-opt awslogs-region=\($region) --log-opt awslogs-group=\($log_group) --log-opt awslogs-stream=\($instance) --entrypoint sh \($image) -c \"echo awslogs pre-deploy check\" >/dev/null || { echo \"CloudWatch Logs(\($log_group))에 로그를 보낼 수 없어 배포를 중단한다. 기존 컨테이너는 그대로 둔다.\" >&2; exit 1; }",
+                "aws logs put-log-events --region \($region) --log-group-name \($log_group) --log-stream-name \($instance) --log-events timestamp=$(($(date +%s)*1000)),message=awslogs-pre-deploy-check >/dev/null || { echo \"CloudWatch Logs(\($log_group))에 로그를 쓸 수 없어 배포를 중단한다. 기존 컨테이너는 그대로 둔다.\" >&2; exit 1; }",
                 "docker stop -t 30 facecook-app || true",
                 "docker rm -f facecook-app || true",
                 "docker run -d --name facecook-app --restart unless-stopped --env-file /opt/facecook/app.env -p 8080:8080 --log-driver awslogs --log-opt awslogs-region=\($region) --log-opt awslogs-group=\($log_group) --log-opt awslogs-stream=\($instance) --log-opt mode=non-blocking --log-opt max-buffer-size=4m \($image)",
