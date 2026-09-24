@@ -8,6 +8,8 @@ import com.facecook.common.exception.ErrorCode;
 import com.facecook.common.session.SessionToken;
 import com.facecook.common.session.SessionAuthenticator;
 import com.facecook.common.session.SessionTokenSigner;
+import com.facecook.common.websocket.StompSubscriptionPolicy;
+import com.facecook.mission.service.MissionAuthorizationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,11 +45,18 @@ class ChatInboundChannelInterceptorTest {
     @Mock
     private ChatAuthorizationService authorizationService;
 
+    @Mock
+    private MissionAuthorizationService missionAuthorizationService;
+
     private ChatInboundChannelInterceptor interceptor;
 
     @BeforeEach
     void setUp() {
-        interceptor = new ChatInboundChannelInterceptor(new SessionAuthenticator(signer, userRepository), authorizationService);
+        interceptor = new ChatInboundChannelInterceptor(
+                new SessionAuthenticator(signer, userRepository),
+                authorizationService,
+                new StompSubscriptionPolicy(authorizationService, missionAuthorizationService)
+        );
     }
 
     @Test
@@ -114,7 +123,37 @@ class ChatInboundChannelInterceptorTest {
 
         assertThatThrownBy(() -> interceptor.preSend(message(accessor), mock(MessageChannel.class)))
                 .isInstanceOfSatisfying(ApiException.class,
-                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.VALIDATION));
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+    }
+
+    @Test
+    void verifiesParticipantWhenSubscribingToMissionTopic() {
+        authenticateActiveUser();
+        StompHeaderAccessor accessor = accessor(StompCommand.SUBSCRIBE, "/topic/mission/20");
+
+        interceptor.preSend(message(accessor), mock(MessageChannel.class));
+
+        verify(missionAuthorizationService).requireParticipant(20L, 1L);
+    }
+
+    @Test
+    void rejectsSubscriptionOutsideAllowListBeforeReachingBroker() {
+        authenticateActiveUser();
+        StompHeaderAccessor accessor = accessor(StompCommand.SUBSCRIBE, "/topic/unknown");
+
+        assertThatThrownBy(() -> interceptor.preSend(message(accessor), mock(MessageChannel.class)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+    }
+
+    @Test
+    void reauthenticatesBeforeCheckingSubscriptionAllowList() {
+        when(signer.verify("signed-token")).thenReturn(Optional.empty());
+        StompHeaderAccessor accessor = accessor(StompCommand.SUBSCRIBE, "/user/queue/chat-acks");
+
+        assertThatThrownBy(() -> interceptor.preSend(message(accessor), mock(MessageChannel.class)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED));
     }
 
     private void authenticateActiveUser() {

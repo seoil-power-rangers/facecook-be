@@ -4,6 +4,7 @@ import com.facecook.chat.service.ChatAuthorizationService;
 import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.common.session.SessionAuthenticator;
+import com.facecook.common.websocket.StompSubscriptionPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.lang.NonNull;
 import org.springframework.messaging.Message;
@@ -22,11 +23,11 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class ChatInboundChannelInterceptor implements ChannelInterceptor {
 
-    private static final Pattern CHAT_TOPIC = Pattern.compile("^/topic/chat/(\\d+)$");
     private static final Pattern CHAT_SEND = Pattern.compile("^/app/chat/(\\d+)/send$");
 
     private final SessionAuthenticator authenticator;
     private final ChatAuthorizationService authorizationService;
+    private final StompSubscriptionPolicy subscriptionPolicy;
 
     @Override
     public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
@@ -39,7 +40,7 @@ public class ChatInboundChannelInterceptor implements ChannelInterceptor {
         if (command == StompCommand.CONNECT || command == StompCommand.SUBSCRIBE || command == StompCommand.SEND) {
             ChatPrincipal principal = refreshAuthentication(accessor);
             if (command == StompCommand.SUBSCRIBE) {
-                validateSubscription(accessor.getDestination(), principal.user().userId());
+                subscriptionPolicy.authorize(accessor.getDestination(), principal.user().userId());
             } else if (command == StompCommand.SEND) {
                 validateSendDestination(accessor.getDestination(), principal.user().userId());
             }
@@ -70,23 +71,6 @@ public class ChatInboundChannelInterceptor implements ChannelInterceptor {
         accessor.setUser(principal);
         attributes.put(ChatSessionAttributes.AUTHENTICATED_USER, principal.user());
         return principal;
-    }
-
-    private void validateSubscription(String destination, Long userId) {
-        if (destination == null || !destination.startsWith("/topic/chat/")) {
-            return;
-        }
-        Matcher matcher = CHAT_TOPIC.matcher(destination);
-        if (!matcher.matches()) {
-            throw new ApiException(ErrorCode.VALIDATION, "채팅 구독 경로가 올바르지 않습니다.");
-        }
-        Long matchId;
-        try {
-            matchId = Long.valueOf(matcher.group(1));
-        } catch (NumberFormatException exception) {
-            throw new ApiException(ErrorCode.VALIDATION, "채팅 구독 경로가 올바르지 않습니다.");
-        }
-        authorizationService.requireParticipant(matchId, userId);
     }
 
     private void validateSendDestination(String destination, Long userId) {
