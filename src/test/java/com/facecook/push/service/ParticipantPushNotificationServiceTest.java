@@ -20,13 +20,15 @@ class ParticipantPushNotificationServiceTest {
 
     private ChatPresenceService chatPresenceService;
     private PushDeliveryService pushDeliveryService;
+    private PushDeliveryMonitor monitor;
     private ParticipantPushNotificationService notificationService;
 
     @BeforeEach
     void setUp() {
         chatPresenceService = mock(ChatPresenceService.class);
         pushDeliveryService = mock(PushDeliveryService.class);
-        notificationService = new ParticipantPushNotificationService(chatPresenceService, pushDeliveryService);
+        monitor = mock(PushDeliveryMonitor.class);
+        notificationService = new ParticipantPushNotificationService(chatPresenceService, pushDeliveryService, monitor);
     }
 
     @Test
@@ -70,5 +72,17 @@ class ParticipantPushNotificationServiceTest {
             TransactionSynchronizationManager.clearSynchronization();
             TransactionSynchronizationManager.setActualTransactionActive(false);
         }
+    }
+
+    @Test
+    void countsExecutorRejectionInsteadOfFailingTheCaller() {
+        when(chatPresenceService.isConnected(2L)).thenReturn(false);
+        org.mockito.Mockito.doThrow(new org.springframework.core.task.TaskRejectedException("queue full"))
+                .when(pushDeliveryService).sendToUser(eq(2L), any());
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> notificationService.cookReceived(2L))
+                .doesNotThrowAnyException();
+
+        verify(monitor).recordRejected();
     }
 }

@@ -25,6 +25,7 @@ public class PushDeliveryService {
     private final PushSubscriptionRepository pushSubscriptionRepository;
     private final WebPushGateway webPushGateway;
     private final ObjectMapper objectMapper;
+    private final PushDeliveryMonitor monitor;
 
     /**
      * userId가 등록해둔 모든 브라우저 구독 각각에 payload를 보낸다(기기가
@@ -42,7 +43,8 @@ public class PushDeliveryService {
      * 응답에서 확인되면 그 자리에서 DB에서 삭제한다.</p>
      *
      * <p>예외 없음 — 페이로드 직렬화 실패, 개별 발송 실패 전부 로그만
-     * 남기고 삼킨다. 전용 실행기 큐가 가득 차면 이 호출 자체가
+     * 남기고 삼킨다. 발송 실패(제한 시간 초과 포함)는 {@link PushDeliveryMonitor}에도
+     * 센다. 전용 실행기 큐가 가득 차면 이 호출 자체가
      * {@link java.util.concurrent.RejectedExecutionException}을 던질 수
      * 있다 — 호출부({@link ParticipantPushNotificationService})가
      * 흡수한다.</p>
@@ -76,6 +78,7 @@ public class PushDeliveryService {
                 );
                 return;
             }
+            monitor.recordFailed();
             log.warn(
                     "웹 푸시 서버가 발송을 거부했습니다. userId={}, subscriptionId={}, status={}, reason={}",
                     subscription.getUserId(), subscription.getId(), result.statusCode(), result.reason()
@@ -84,6 +87,7 @@ public class PushDeliveryService {
             if (exception instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
+            monitor.recordFailed();
             log.warn(
                     "웹 푸시 발송에 실패했습니다. userId={}, subscriptionId={}",
                     subscription.getUserId(), subscription.getId(), exception

@@ -110,6 +110,7 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           TG_ARN: ${{ steps.tg.outputs.arn }}
+          LOG_GROUP: /facecook/be
         run: |
           set -e
           if [ -z "$IMAGE_DIGEST" ]; then
@@ -150,19 +151,35 @@ jobs:
             # 쌓이기만 해서 8GB 디스크가 차 pull이 실패한 적이 있다. 받기 전에 지우므로 직전 버전 이미지는 다음
             # 배포 때까지 남는다. 정리가 실패해도 배포는 계속한다.
             #
+            # 컨테이너 로그는 CloudWatch Logs(LOG_GROUP, 보존 30일)로 보낸다. 서버 디스크에만 두면 서버 2대에 나뉘고
+            # 배포 때 컨테이너와 함께 지워진다. 스트림 이름은 인스턴스 ID라 재배포해도 같은 스트림에 이어 쌓인다.
+            # non-blocking 모드라 CloudWatch 전송이 느려도 애플리케이션 로그 출력이 막히지 않고, 버퍼(4MB)를 넘는
+            # 로그만 버려진다. 인스턴스 역할(facecook-ec2-role)의 facecook-logs-write 정책이 이 로그 그룹에
+            # 스트림 생성·쓰기를 허용한다. docker logs도 계속 쓸 수 있다(도커 기본 이중 로깅).
+            #
+            # non-blocking 모드는 로그 그룹·권한이 없어도 컨테이너를 그대로 띄우고 로그만 조용히 버린다. 그래서
+            # 기존 컨테이너를 지우기 전에, 같은 설정을 blocking 모드(기본값)로 한 임시 컨테이너를 먼저 띄워 본다.
+            # blocking 모드는 로그 스트림을 못 만들면 docker run이 바로 실패한다(exit 125). 다만 도커는 시작할 때
+            # 스트림 생성만 확인하고, 실제 로그 쓰기(PutLogEvents)는 뒤에서 하며 실패해도 종료 코드로 알려 주지
+            # 않는다. 그래서 이어서 같은 인스턴스 역할로 AWS CLI가 그 스트림에 한 줄을 직접 써 본다. 둘 중
+            # 하나라도 실패하면 기존 컨테이너를 그대로 두고 배포를 멈춘다 — 설정이 틀린 채 로그가 사라지는
+            # 배포를 막는다.
+            #
             # 마지막 세 줄이 서버 안 확인이다: 실행 중인 컨테이너가 방금 배포한 이미지에서 만들어졌는지,
             # 프로세스가 떠 있는지, 애플리케이션이 UP을 응답할 때까지(최대 약 3분) 기다린다. 하나라도
             # 어긋나면 명령이 실패해서 아래에서 다음 서버로 넘어가지 않는다.
-            COMMANDS_JSON=$(jq -n --arg ecr "$ECR_REPOSITORY" --arg region "$AWS_REGION" --arg refresh_env "$REFRESH_ENV" --arg image "$IMAGE" '{
+            COMMANDS_JSON=$(jq -n --arg ecr "$ECR_REPOSITORY" --arg region "$AWS_REGION" --arg refresh_env "$REFRESH_ENV" --arg image "$IMAGE" --arg log_group "$LOG_GROUP" --arg instance "$ID" '{
               commands: [
                 ($refresh_env + " || exit 1"),
                 "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($ecr) || exit 1",
                 "docker image prune -af || true",
                 "docker pull \($image) || exit 1",
                 "command -v curl >/dev/null || { echo \"서버에 curl이 없어 기동 확인을 할 수 없다\" >&2; exit 1; }",
+                "docker run --rm --log-driver awslogs --log-opt awslogs-region=\($region) --log-opt awslogs-group=\($log_group) --log-opt awslogs-stream=\($instance) --entrypoint sh \($image) -c \"echo awslogs pre-deploy check\" >/dev/null || { echo \"CloudWatch Logs(\($log_group))에 로그를 보낼 수 없어 배포를 중단한다. 기존 컨테이너는 그대로 둔다.\" >&2; exit 1; }",
+                "aws logs put-log-events --region \($region) --log-group-name \($log_group) --log-stream-name \($instance) --log-events timestamp=$(($(date +%s)*1000)),message=awslogs-pre-deploy-check >/dev/null || { echo \"CloudWatch Logs(\($log_group))에 로그를 쓸 수 없어 배포를 중단한다. 기존 컨테이너는 그대로 둔다.\" >&2; exit 1; }",
                 "docker stop -t 30 facecook-app || true",
                 "docker rm -f facecook-app || true",
-                "docker run -d --name facecook-app --restart unless-stopped --env-file /opt/facecook/app.env -p 8080:8080 \($image)",
+                "docker run -d --name facecook-app --restart unless-stopped --env-file /opt/facecook/app.env -p 8080:8080 --log-driver awslogs --log-opt awslogs-region=\($region) --log-opt awslogs-group=\($log_group) --log-opt awslogs-stream=\($instance) --log-opt mode=non-blocking --log-opt max-buffer-size=4m \($image)",
                 "if [ \"$(docker inspect -f \"{{.Config.Image}}\" facecook-app)\" != \"\($image)\" ]; then echo \"실행 중인 컨테이너가 배포한 이미지가 아니다\" >&2; exit 1; fi",
                 "echo \"container started at $(docker inspect -f \"{{.State.StartedAt}}\" facecook-app), image \($image)\"",
                 "for i in $(seq 1 60); do if [ \"$(docker inspect -f \"{{.State.Running}}\" facecook-app)\" = true ] && curl -fsS http://localhost:8080/actuator/health | grep -q \"\\\"status\\\":\\\"UP\\\"\"; then echo \"app UP\"; break; fi; if [ \"$i\" = 60 ]; then echo \"새 컨테이너가 3분 안에 UP이 되지 않았다\" >&2; docker logs --tail 50 facecook-app >&2; exit 1; fi; sleep 3; done"

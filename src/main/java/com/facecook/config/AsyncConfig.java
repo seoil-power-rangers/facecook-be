@@ -30,11 +30,12 @@ public class AsyncConfig {
      * Redis 발행 같은 다른 커밋 후 작업이 못 도는 일이 없게 한다(facecook-be#82).
      * 큐가 가득 차면(포화) 기본 정책(AbortPolicy)대로 거절하고, 호출부
      * (ParticipantPushNotificationService.sendIfOffline)가 그 예외를 흡수해
-     * 로그만 남긴다 — 푸시는 best-effort라 유실을 감수하고 요청 스레드를
-     * 절대 막지 않는 쪽을 택했다.
+     * 거절 횟수만 센다({@link com.facecook.push.service.PushDeliveryMonitor}) —
+     * 푸시는 best-effort라 유실을 감수하고 요청 스레드를 절대 막지 않는 쪽을
+     * 택했다.
      */
     @Bean(name = "pushExecutor")
-    Executor pushExecutor() {
+    ThreadPoolTaskExecutor pushExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(4);
         executor.setMaxPoolSize(8);
