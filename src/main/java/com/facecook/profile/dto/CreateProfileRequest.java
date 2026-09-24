@@ -5,6 +5,17 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+/**
+ * {@code POST /api/profile} 요청 본문(온보딩에서 입력한 값).
+ *
+ * <p>검증은 두 단계다. 형식(빈 값·길이·19세 이상)은 여기 어노테이션이 컨트롤러 진입 전에 보고,
+ * 값의 의미(학과가 정해진 30개 중 하나인지, 사진이 우리 버킷 주소인지)는
+ * {@code ProfileService}가 본다. {@code @Min(19)}는 행사 참가 조건이다(FE도 막지만
+ * API를 직접 부르는 경우를 위해 서버에서도 막는다).</p>
+ *
+ * <p>{@code age}를 {@code int}가 아니라 {@code Integer}로 받는 이유: JSON에 값이 없으면
+ * {@code int}는 조용히 0이 되지만 {@code Integer}는 null이 되어 {@code @NotNull}이 잡는다.</p>
+ */
 public record CreateProfileRequest(
         @NotBlank(message = "닉네임을 입력해주세요.")
         @Size(max = 50, message = "닉네임은 50자를 넘을 수 없습니다.")

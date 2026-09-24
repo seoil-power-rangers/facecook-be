@@ -16,6 +16,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+/**
+ * 컨트롤러(와 그 아래 서비스)에서 올라온 예외를 HTTP 응답으로 바꾸는 한 곳.
+ *
+ * <p>{@code @RestControllerAdvice}는 모든 {@code @RestController}에 공통으로
+ * 적용된다. 예외가 나면 Spring이 이 클래스에서 {@code @ExceptionHandler}의
+ * 타입이 가장 가까운 메서드를 골라 부른다 — 그래서 구체적인 예외(ApiException,
+ * 검증 실패 등)는 각자의 핸들러로 가고, 나머지만 맨 아래
+ * {@link #handleUnexpectedException}(500)에 걸린다.</p>
+ *
+ * <p>응답 형식은 전부 {@link ErrorResponse}다. 405·415·정적 리소스 404만 본문이 없다.
+ * 인터셉터({@code SessionAuthenticationInterceptor})가 던진 {@code UNAUTHORIZED}도
+ * 컨트롤러 실행 전이지만 같은 경로로 여기까지 온다.</p>
+ */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {

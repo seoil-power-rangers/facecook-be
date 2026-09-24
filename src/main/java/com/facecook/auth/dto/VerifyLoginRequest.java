@@ -5,6 +5,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+/**
+ * {@code POST /api/auth/verify-login} 요청 본문(이메일 + 메일로 받은 6자리 코드).
+ * 코드가 숫자 6자리가 아니면 {@code @Pattern} 검사에서 서비스에 오기 전에 거절한다.
+ */
 public record VerifyLoginRequest(
         @NotBlank(message = "이메일을 입력해주세요.")
         @Email(message = "올바른 이메일 형식이 아닙니다.")

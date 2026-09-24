@@ -8,6 +8,11 @@ import jakarta.validation.constraints.Size;
 
 import java.util.Set;
 
+/**
+ * {@code POST /api/auth/verify-signup} 요청 본문. 인증코드 확인과 계정 생성을 한 번에 한다.
+ * {@code agreedTerms}에는 동의한 약관 이름이 들어오고, 서비스가
+ * {@code "service"}·{@code "privacy"}가 다 있는지 확인한다(선택 약관은 더 있어도 된다).
+ */
 public record VerifySignupRequest(
         @NotBlank(message = "이메일을 입력해주세요.")
         @Email(message = "올바른 이메일 형식이 아닙니다.")

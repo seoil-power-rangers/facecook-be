@@ -44,6 +44,7 @@ public class BrevoAuthMailService implements AuthMailService {
         }
     }
 
+    // """ ... """ 는 여러 줄 문자열(Java 15+ 텍스트 블록), formatted()는 %s 자리에 값을 채운다.
     private String body(String code, VerificationPurpose purpose) {
         String action = purpose == VerificationPurpose.SIGNUP ? "회원가입" : "로그인";
         return """

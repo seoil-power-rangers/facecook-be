@@ -10,6 +10,19 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
+/**
+ * {@code users} 테이블 조회·저장.
+ *
+ * <p>Spring Data JPA 읽는 법: 인터페이스만 선언하면 스프링이 구현을 만들어 준다.
+ * {@code JpaRepository<User, Long>}을 상속하면 {@code findById}, {@code save} 같은 기본 메서드가
+ * 생기고, {@code existsByEmail}처럼 규칙에 맞는 이름을 선언하면 이름을 해석해 쿼리를 만든다
+ * ({@code existsBy} + {@code Email} → {@code WHERE email = ?}). 이름으로 표현하기 어려운 건
+ * {@code @Query}로 직접 쓴다.</p>
+ *
+ * <p>주요 호출부: 세션 확인({@code SessionAuthenticator} — 요청마다 {@code findById}),
+ * 가입·로그인({@code AuthService}), 활동 시각({@code UserActivityService}),
+ * 관리자 통계({@code AdminStatsService} — {@code count*} 메서드).</p>
+ */
 public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByEmail(String email);
@@ -32,6 +45,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * 일어난다 — 매번 값을 먼저 읽어서 비교할 필요가 없다. 프론트가
      * 5초 간격으로 폴링하는 화면이 많아서, 디바운스가 없으면 인증된
      * 요청마다 매번 이 테이블에 쓰기가 발생한다.
+     */
+    /*
+     * @Modifying: SELECT가 아닌 UPDATE/DELETE 쿼리라는 표시. 호출하는 쪽에 트랜잭션이
+     * 있어야 한다(UserActivityService#touch가 @Transactional).
      */
     @Modifying
     @Query("UPDATE User u SET u.lastActiveAt = :now WHERE u.id = :id AND (u.lastActiveAt IS NULL OR u.lastActiveAt < :staleBefore)")

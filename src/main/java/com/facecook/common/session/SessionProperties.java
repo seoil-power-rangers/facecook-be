@@ -2,6 +2,16 @@ package com.facecook.common.session;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/**
+ * {@code application.yml}의 {@code app.session.*} 설정값(세션 서명 키, 쿠키 이름·
+ * 수명·보안 속성). 실제 값은 환경변수({@code SESSION_SECRET} 등)에서 온다.
+ *
+ * <p>{@code @ConfigurationProperties} + {@code record}: 스프링이 설정 파일을 읽어
+ * 이 record를 만들어 빈으로 등록한다({@code SessionConfig}의
+ * {@code @EnableConfigurationProperties}). 아래 compact 생성자에서 기본값을
+ * 채우고, 서명 키가 없으면 서버가 아예 뜨지 않게 한다 — 키 없이 떠서 모든
+ * 로그인이 실패하는 것보다 기동 실패가 원인을 찾기 쉽다.</p>
+ */
 @ConfigurationProperties(prefix = "app.session")
 public record SessionProperties(
         String secret,
