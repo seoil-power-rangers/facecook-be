@@ -14,6 +14,11 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 
 import java.util.Map;
 
+/**
+ * WebSocket 연결({@code /ws}) 직전, 아직 HTTP 요청인 단계에서 세션 쿠키로 로그인을 확인한다. 브라우저 WebSocket은
+ * 헤더를 직접 붙일 수 없지만 연결 주소에 해당하는 쿠키는 자동으로 실어 보내서, REST와 같은 세션 쿠키로 인증할 수 있다.
+ * 인증 정책은 REST와 같은 {@code SessionAuthenticator}다.
+ */
 @Component
 @RequiredArgsConstructor
 public class ChatHandshakeInterceptor implements HandshakeInterceptor {

@@ -10,6 +10,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * {@code message} 조회·저장. 호출부: 전송·재전송 확인({@code ChatService}), 이력 페이지({@code ChatMessagePageReader}),
+ * 안읽음 개수({@code MatchService}), 방별 마지막 메시지({@code SuperAccountService}).
+ *
+ * <p>{@code Pageable}을 받는 메서드는 {@code LIMIT}을 붙인다({@code PageRequest.of(0, limit)} — 첫 페이지 limit개).
+ * 이력은 "몇 번째 페이지"가 아니라 {@code IdLessThan}(이 id보다 작은 것)으로 넘긴다.</p>
+ */
 public interface MessageRepository extends JpaRepository<Message, Long> {
 
     Optional<Message> findByClientMessageId(UUID clientMessageId);
@@ -18,6 +25,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     List<Message> findByMatchIdAndIdLessThanOrderByIdDesc(Long matchId, Long before, Pageable pageable);
 
+    /** 방마다 가장 큰 id의 메시지 하나씩. 슈퍼 계정의 전체 채팅방 목록에서 쓴다({@code SuperAccountService}). */
     @Query("""
             select message from Message message
             where message.id in (

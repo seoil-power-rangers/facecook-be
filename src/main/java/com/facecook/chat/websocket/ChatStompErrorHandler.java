@@ -25,8 +25,8 @@ import java.nio.charset.StandardCharsets;
  * 비즈니스 예외(CLOSED, FORBIDDEN 등)는 별도 스레드(inboundChannel executor)에서
  * {@link org.springframework.messaging.simp.annotation.support.SimpAnnotationMethodMessageHandler}가
  * 처리하는데, 여기서 던진 예외는 이 클래스를 절대 거치지 않고 조용히 로그만 찍히고
- * 사라진다 — 그래서 handleApiException 핸들러가 있는 컨트롤러들이
- * {@link #buildErrorFrame}을 직접 호출해서 clientOutboundChannel로 보내야 한다.
+ * 사라진다 — 그래서 {@code ChatMessageController#handleException}({@code @MessageExceptionHandler})이
+ * {@link #buildErrorFrame}을 직접 호출해서 clientOutboundChannel로 보낸다.
  */
 @Component
 @RequiredArgsConstructor
