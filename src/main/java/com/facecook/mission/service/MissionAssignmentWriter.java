@@ -20,6 +20,22 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * 미션 배정의 "쓰기" 담당. 배정이 필요한지 판단은 {@link MissionAssignmentService}가 하고, 실제로 모자란 STEP을
+ * 채우는 일만 여기서 한다.
+ *
+ * <p>두 메서드는 트랜잭션 전파 설정이 다르다:</p>
+ * <ul>
+ * <li>{@link #assignWithLock}: {@code REQUIRES_NEW} — 호출한 쪽에 트랜잭션이 있어도(읽기 전용이어도) 새 쓰기
+ * 트랜잭션을 따로 열고, 매칭 행을 잠근 뒤 다시 확인하고 채운다. 참가자가 처음 미션을 볼 때 두 사람이 동시에
+ * 열어도 배정은 한 번만 된다.</li>
+ * <li>{@link #assignWithLockedMission}: {@code MANDATORY} — 호출한 쪽이 이미 행을 잠근 트랜잭션 안에서만 부를 수
+ * 있다(없으면 예외). 관리자 완료 처리가 이 경로다.</li>
+ * </ul>
+ *
+ * <p>무작위 선택에 {@code ThreadLocalRandom}을 쓴다 — 여러 스레드가 동시에 불러도 서로 기다리지 않는 난수 생성기다.
+ * 인증코드와 달리 예측돼도 문제없는 값이라 {@code SecureRandom}이 필요 없다.</p>
+ */
 @Service
 @RequiredArgsConstructor
 public class MissionAssignmentWriter {
@@ -29,6 +45,7 @@ public class MissionAssignmentWriter {
     private final MissionTemplateRepository templateRepository;
     private final Clock clock;
 
+    /** 새 트랜잭션에서 매칭 행을 잠그고, 모자란 STEP의 미션을 채워 STEP 순서대로 돌려준다. 예외: {@code NOT_FOUND}(매칭 없음), {@link MissionTemplateNotFoundException}. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public List<MatchMissionAssignment> assignWithLock(Long matchId) {
         MatchMission mission = matchMissionRepository.findByIdForUpdate(matchId)
@@ -36,6 +53,7 @@ public class MissionAssignmentWriter {
         return assignMissing(mission);
     }
 
+    /** 이미 잠근 매칭({@code mission})에 모자란 STEP을 같은 트랜잭션 안에서 채운다. 트랜잭션 밖에서 부르면 예외. */
     @Transactional(propagation = Propagation.MANDATORY)
     public List<MatchMissionAssignment> assignWithLockedMission(MatchMission mission) {
         return assignMissing(mission);

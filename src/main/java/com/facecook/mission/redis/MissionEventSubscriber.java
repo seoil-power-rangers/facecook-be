@@ -11,6 +11,10 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 
+/**
+ * Redis 채널의 미션 진행 이벤트를 받아 이 서버에 연결된 구독자({@code /topic/mission/{matchId}})에게 전달한다.
+ * {@code MissionRedisConfig}가 리스너로 등록한다. 채팅의 {@code ChatMessageSubscriber}와 같은 구조다.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor

@@ -8,6 +8,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+/**
+ * 미션 완료가 DB에 커밋된 뒤, 새 진행 상태를 Redis로 발행해 참가자 화면에 실시간으로 알린다.
+ *
+ * <p>{@code @TransactionalEventListener(phase = AFTER_COMMIT)}: 이벤트를 발행한 트랜잭션이 <b>커밋된 뒤에만</b>
+ * 실행한다. 롤백되면 실행되지 않아서, 저장되지 않은 진행을 화면에 먼저 보여 주는 일이 없다.
+ * {@code @Async("missionEventExecutor")}: 별도 스레드에서 돌아서, Redis가 느려도 관리자의 완료 요청 응답이
+ * 기다리지 않는다.</p>
+ *
+ * <p>흐름: 완료 커밋 → 이 리스너 → {@code MissionEventPublisher}(Redis 채널) → 모든 서버의
+ * {@code MissionEventSubscriber} → {@code /topic/mission/{matchId}} 구독자. 채팅과 같은 서버 간 중계 방식이다.</p>
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor

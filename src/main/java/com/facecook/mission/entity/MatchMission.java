@@ -12,6 +12,16 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/**
+ * 매칭의 미션 진행 상태. <b>테이블은 {@code match_info}</b>로, 매칭 쪽 {@code MatchInfo}와 같은 행을 본다.
+ * 이 엔티티는 미션 컬럼({@code current_step}, {@code stepN_completed_at/by})을 다루고 읽음 시각은 모른다.
+ *
+ * <p>진행: {@code currentStep} 1 → 2 → 3 → 4(모두 완료). 한 STEP 완료는 관리자만 하고
+ * ({@link #completeCurrentStep}), 완료 시각과 처리한 관리자 ID를 STEP별로 남긴다.</p>
+ *
+ * <p>ID를 직접 만들지 않는다({@code @GeneratedValue} 없음) — 행은 매칭 성사 때 {@code CookService}가
+ * {@code MatchInfo}로 이미 만든다. 이 엔티티로 새 행을 저장하는 코드는 없다.</p>
+ */
 @Getter
 @Entity
 @Table(name = "match_info")
@@ -59,6 +69,7 @@ public class MatchMission {
     @Column(name = "step3_completed_by")
     private Long step3CompletedBy;
 
+    /** userId가 이 매칭의 당사자인지({@code MissionAuthorizationService}가 쓴다). */
     public boolean includes(Long userId) {
         return userAId.equals(userId) || userBId.equals(userId);
     }

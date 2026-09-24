@@ -10,6 +10,10 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/**
+ * 미션 문구 원본({@code mission_template}). V6 마이그레이션이 묶음(bundle) 단위로 넣어 둔 고정 데이터이고,
+ * 코드는 읽기만 한다.
+ */
 @Getter
 @Entity
 @Table(name = "mission_template")
