@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+/** 미션 진행 상태를 Redis 채널({@link MissionRedisChannels#EVENTS})에 JSON으로 발행한다. 채팅의 {@code ChatMessagePublisher}와 같은 역할. */
 @Component
 @RequiredArgsConstructor
 public class MissionEventPublisher {

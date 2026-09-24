@@ -6,6 +6,10 @@ import com.facecook.mission.entity.MatchMissionAssignment;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * 관리자 화면의 매칭 한 줄: 두 사람, 현재 STEP, STEP별 미션 문구, STEP별 완료 시각·처리한 관리자.
+ * 미션 문구는 배정 목록({@code MatchMissionAssignment})에서 STEP으로 찾아 채운다.
+ */
 public record AdminMissionProgressResponse(
         Long matchId, Long userAId, Long userBId, LocalDateTime matchedAt, int currentStep,
         String step1Mission, String step2Mission, String step3Mission,

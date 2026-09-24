@@ -15,6 +15,13 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/**
+ * 매칭에 배정된 STEP별 미션 하나({@code match_mission_assignment}). 매칭당 STEP 1~3 세 행이고, 세 행 모두
+ * 같은 묶음({@link MissionTemplate#getBundleId()})에서 나온다. 한 번 배정되면 바뀌지 않는다.
+ *
+ * <p>{@code @ManyToOne(fetch = LAZY)}: 미션 문구({@link MissionTemplate})는 필요할 때 읽는다. 목록 조회는
+ * {@code MatchMissionAssignmentRepository}의 {@code @EntityGraph}로 함께 가져와 N+1을 막는다.</p>
+ */
 @Getter
 @Entity
 @Table(name = "match_mission_assignment")
