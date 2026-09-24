@@ -11,6 +11,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * {@code cook} 테이블 조회·저장. 호출부는 {@code CookService} 하나다.
+ *
+ * <p>{@code count*} 메서드는 하루 한도 검사용이다. 날짜 범위를 {@code [오늘 0시, 내일 0시)}로 넘겨
+ * 그날 보낸 수를 센다(끝은 포함하지 않음). 조회 결과를 가져와 세지 않고 DB가 개수만 돌려준다.</p>
+ */
 public interface CookRepository extends JpaRepository<Cook, Long> {
 
     /**

@@ -21,6 +21,19 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 콕 API({@code /api/cooks}).
+ *
+ * <table>
+ * <tr><th>API</th><th>서비스</th><th>쓰는 화면(FE)</th></tr>
+ * <tr><td>POST /api/cooks</td><td>{@link CookService#send}</td><td>탐색·프로필 상세의 콕 버튼, 콕 화면의 맞콕</td></tr>
+ * <tr><td>GET /api/cooks</td><td>{@link CookService#getCooks}</td><td>콕 화면, 배지(5초마다 조회)</td></tr>
+ * <tr><td>DELETE /api/cooks/{cookId}</td><td>{@link CookService#cancel}</td><td>보낸 콕 취소</td></tr>
+ * <tr><td>POST /api/cooks/{cookId}/reject</td><td>{@link CookService#reject}</td><td>받은 콕 거절(설정으로 켜야 동작)</td></tr>
+ * </table>
+ *
+ * <p>누가 보내고 누가 취소하는지는 전부 세션의 userId로 정한다. 요청 본문에는 받는 사람만 있다.</p>
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/cooks")

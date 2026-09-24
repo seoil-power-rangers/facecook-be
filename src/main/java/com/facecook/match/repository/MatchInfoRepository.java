@@ -9,8 +9,20 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * {@code match_info} 조회·저장. 호출부: 매칭 생성과 중복 확인({@code CookService}), 목록·읽음
+ * ({@code MatchService}), 당사자 확인({@code ChatAuthorizationService}), 전체 목록({@code SuperAccountService}).
+ *
+ * <p>{@code """ ... """}로 쓴 {@code @Query}는 여러 줄 텍스트 블록이다. {@code nativeQuery = true}는 JPQL이
+ * 아니라 MySQL SQL을 그대로 보낸다는 뜻이다(윈도 함수 {@code row_number()}처럼 JPQL에 없는 기능이 필요할 때).
+ * 이때 결과는 엔티티가 아니라 getter만 있는 인터페이스({@link RecentMessageProjection})로 받는다.</p>
+ */
 public interface MatchInfoRepository extends JpaRepository<MatchInfo, Long> {
 
+    /**
+     * 두 사람 사이에 매칭이 있는지. 저장할 때 (작은 ID, 큰 ID)로 정렬하지만 호출부가 순서를 신경 쓰지 않아도
+     * 되게 양쪽 순서를 다 본다. 호출: {@code CookService}(이미 매칭된 상대에게 콕을 보내지 못하게).
+     */
     @Query("""
             select (count(matchInfo) > 0)
             from MatchInfo matchInfo

@@ -19,6 +19,18 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 클라이언트가 보내는 모든 STOMP 프레임이 브로커·컨트롤러에 닿기 전에 지나가는 검문소.
+ * {@code WebSocketConfig#configureClientInboundChannel}이 등록한다.
+ *
+ * <ul>
+ * <li>CONNECT·SUBSCRIBE·SEND마다 세션 토큰을 다시 검증한다 — 연결 뒤에 계정이 정지되거나 세션이 만료될 수 있다.</li>
+ * <li>SUBSCRIBE: 허용 목록({@code StompSubscriptionPolicy})에 있는 주소만, 채팅방·미션은 당사자만.</li>
+ * <li>SEND: {@code /app/chat/{matchId}/send}만, 당사자만. {@code /topic/...}으로 직접 보내 저장·검사를 건너뛰는 길을 막는다.</li>
+ * </ul>
+ *
+ * <p>여기서 던진 예외는 {@link ChatStompErrorHandler}가 {@code {code, message}} ERROR 프레임으로 바꿔 보낸다.</p>
+ */
 @Component
 @RequiredArgsConstructor
 public class ChatInboundChannelInterceptor implements ChannelInterceptor {
