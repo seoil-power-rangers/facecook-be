@@ -136,6 +136,17 @@ class ChatRestControllerTest {
     }
 
     @Test
+    void rejectsNonNumericLimitAsValidationInsteadOfServerError() throws Exception {
+        authenticate();
+
+        mockMvc.perform(get("/api/matches/20/messages")
+                        .param("limit", "abc")
+                        .cookie(validCookie()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION"));
+    }
+
+    @Test
     void rejectsHistoryWithoutSession() throws Exception {
         mockMvc.perform(get("/api/matches/20/messages"))
                 .andExpect(status().isUnauthorized())
