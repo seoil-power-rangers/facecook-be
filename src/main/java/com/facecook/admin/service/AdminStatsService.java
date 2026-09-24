@@ -68,11 +68,16 @@ public class AdminStatsService {
     }
 
     /**
-     * 이 "활동 중" 기준은 참가자용 GET /api/stats(ProfileActivityLookup, 15분
-     * 롤링 기준)와 일부러 다르다. 여긴 하루 단위 운영 리포트용이라 자정
-     * 기준으로 하루치를 세고, 참가자 화면은 "지금 접속해 있나"를 실시간에
-     * 가깝게 보여줘야 해서 짧은 롤링 창을 쓴다. 두 수치가 다르게 보여도
-     * 버그가 아니라 의도된 차이다 — 하나로 통일하지 않는다.
+     * {@code activeToday}를 센다. 설정({@code app.admin.stats.active-user-criterion})에 따라 기준이 다르다.
+     *
+     * <ul>
+     * <li>{@code STATUS}(기본값): {@code status = active}인 계정 수. 활동 시각을 보지 않으므로 사실상
+     * "정지되지 않은 전체 계정"이고, 관리자·슈퍼 계정도 들어간다.</li>
+     * <li>{@code LAST_ACTIVE_TODAY}: {@code last_active_at}이 오늘(행사 시간대 자정 ~ 다음 날 자정)인 계정 수.</li>
+     * </ul>
+     *
+     * <p>참가자용 {@code GET /api/stats}의 "활동 중"({@code ProfileActivityLookup#activeSince}, 기본 최근 15분·프로필이
+     * 있는 계정만)과는 어느 기준이든 세는 대상이 다르다. 두 숫자가 달라도 같은 값을 다르게 센 것이 아니다.</p>
      */
     private long countActiveUsers() {
         if (properties.activeUserCriterion() == ActiveUserCriterion.STATUS) {

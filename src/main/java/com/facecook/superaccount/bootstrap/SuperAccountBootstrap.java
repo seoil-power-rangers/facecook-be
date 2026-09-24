@@ -16,6 +16,23 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 
+/**
+ * 서버가 뜰 때 슈퍼 계정을 만들거나 비밀번호를 맞춘다. 슈퍼 계정은 가입 API로 만들 수 없고 이 경로로만 생긴다.
+ *
+ * <p>{@code ApplicationRunner}: 애플리케이션 기동이 끝난 직후(로그 "Started FacecookBeApplication" 다음) 스프링이
+ * {@link #run}을 한 번 부른다. 이때 웹 서버는 이미 열려 있다.</p>
+ *
+ * <p>동작({@code SuperAccountBootstrapTest}가 경우마다 확인):</p>
+ * <ul>
+ * <li>{@code SUPER_ACCOUNT_LOGIN}이나 {@code SUPER_ACCOUNT_PASSWORD}가 비었으면 아무것도 안 한다.</li>
+ * <li>그 아이디의 계정이 없으면 {@code SUPER} 역할로 만든다(로그 "슈퍼 계정을 만들었습니다").</li>
+ * <li>있고 역할이 {@code SUPER}면, 비밀번호가 환경변수와 다를 때만 해시를 바꾼다. 환경변수를 바꾸고 재시작하면 새 비밀번호가 된다.</li>
+ * <li>있는데 다른 역할이면 건드리지 않고 오류 로그만 남긴다(참가자 계정을 슈퍼로 바꾸지 않는다).</li>
+ * </ul>
+ *
+ * <p>서버 두 대가 동시에 떠서 둘 다 "없음"을 본 경우, {@code users.email}의 UNIQUE 제약 때문에 한쪽 저장이
+ * {@code DataIntegrityViolationException}으로 실패한다. 다른 쪽이 이미 만들었으므로 무시한다.</p>
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
