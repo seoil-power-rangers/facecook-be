@@ -11,6 +11,8 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.time.Duration;
 import java.util.List;
@@ -48,9 +50,14 @@ class PushDeliveryServiceAsyncIntegrationTest {
         }
 
         @Bean
+        PushDeliveryMonitor pushDeliveryMonitor(@Qualifier("pushExecutor") ThreadPoolTaskExecutor pushExecutor) {
+            return new PushDeliveryMonitor(pushExecutor);
+        }
+
+        @Bean
         PushDeliveryService pushDeliveryService(
-                PushSubscriptionRepository repository, WebPushGateway gateway) {
-            return new PushDeliveryService(repository, gateway, new ObjectMapper());
+                PushSubscriptionRepository repository, WebPushGateway gateway, PushDeliveryMonitor monitor) {
+            return new PushDeliveryService(repository, gateway, new ObjectMapper(), monitor);
         }
     }
 

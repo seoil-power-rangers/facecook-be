@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.concurrent.RejectedExecutionException;
+
 /**
  * 참가자에게 보내는 웹 푸시 3종(콕 받음·매칭 성사·메시지 도착)의
  * 진입점. 세 메서드 다 같은 규칙을 따른다 — 트랜잭션이 있으면 커밋된
@@ -24,6 +26,7 @@ public class ParticipantPushNotificationService {
 
     private final ChatPresenceService chatPresenceService;
     private final PushDeliveryService pushDeliveryService;
+    private final PushDeliveryMonitor monitor;
 
     /**
      * receiverId에게 "콕이 도착했다" 푸시를 보낸다.
@@ -109,6 +112,10 @@ public class ParticipantPushNotificationService {
                 return;
             }
             pushDeliveryService.sendToUser(userId, payload);
+        } catch (RejectedExecutionException exception) {
+            // 푸시 실행기 대기열이 가득 찼다. 몰릴 때는 건마다 남기면 로그가 넘치므로
+            // 횟수만 세고 PushDeliveryMonitor가 주기적으로 한 줄로 남긴다.
+            monitor.recordRejected();
         } catch (RuntimeException exception) {
             // 푸시는 best-effort 부가 기능이다. 알림 인프라 장애가 이미 성공한
             // 콕/매칭/메시지 처리를 실패로 바꾸지 않도록 경계에서 흡수한다.

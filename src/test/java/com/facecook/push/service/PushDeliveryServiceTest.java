@@ -22,6 +22,7 @@ class PushDeliveryServiceTest {
 
     private PushSubscriptionRepository pushSubscriptionRepository;
     private WebPushGateway webPushGateway;
+    private PushDeliveryMonitor monitor;
     private PushDeliveryService pushDeliveryService;
     private PushSubscription subscription;
 
@@ -29,10 +30,12 @@ class PushDeliveryServiceTest {
     void setUp() {
         pushSubscriptionRepository = mock(PushSubscriptionRepository.class);
         webPushGateway = mock(WebPushGateway.class);
+        monitor = mock(PushDeliveryMonitor.class);
         pushDeliveryService = new PushDeliveryService(
                 pushSubscriptionRepository,
                 webPushGateway,
-                new ObjectMapper()
+                new ObjectMapper(),
+                monitor
         );
         subscription = PushSubscription.create(
                 2L,
@@ -51,6 +54,7 @@ class PushDeliveryServiceTest {
         pushDeliveryService.sendToUser(2L, payload());
 
         verify(pushSubscriptionRepository).delete(subscription);
+        verify(monitor, never()).recordFailed();
     }
 
     @Test
@@ -60,6 +64,29 @@ class PushDeliveryServiceTest {
 
         pushDeliveryService.sendToUser(2L, payload());
 
+        verify(pushSubscriptionRepository, never()).delete(subscription);
+        verify(monitor, never()).recordFailed();
+    }
+
+    @Test
+    void countsRejectedDeliveryAsFailureWithoutDeletingSubscription() throws Exception {
+        when(webPushGateway.send(eq(subscription), anyString()))
+                .thenReturn(new PushDeliveryResult(500, "Internal Server Error"));
+
+        pushDeliveryService.sendToUser(2L, payload());
+
+        verify(monitor).recordFailed();
+        verify(pushSubscriptionRepository, never()).delete(subscription);
+    }
+
+    @Test
+    void countsTimeoutAsFailureWithoutDeletingSubscription() throws Exception {
+        when(webPushGateway.send(eq(subscription), anyString()))
+                .thenThrow(new java.util.concurrent.TimeoutException("push server did not answer"));
+
+        assertThatCode(() -> pushDeliveryService.sendToUser(2L, payload())).doesNotThrowAnyException();
+
+        verify(monitor).recordFailed();
         verify(pushSubscriptionRepository, never()).delete(subscription);
     }
 
@@ -71,6 +98,7 @@ class PushDeliveryServiceTest {
         assertThatCode(() -> pushDeliveryService.sendToUser(2L, payload())).doesNotThrowAnyException();
 
         verify(pushSubscriptionRepository, never()).delete(subscription);
+        verify(monitor).recordFailed();
     }
 
     private PushNotificationPayload payload() {
