@@ -3,6 +3,7 @@ package com.facecook.report.dto;
 import com.facecook.report.entity.Report;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 
 public record ReportResponse(
         Long reportId,
@@ -22,7 +23,7 @@ public record ReportResponse(
                 report.getReportedUserId(),
                 report.getReason(),
                 report.getDetail(),
-                report.getStatus().name().toLowerCase(),
+                report.getStatus().name().toLowerCase(Locale.ROOT),
                 report.getReviewedBy(),
                 report.getReviewedAt(),
                 report.getCreatedAt()

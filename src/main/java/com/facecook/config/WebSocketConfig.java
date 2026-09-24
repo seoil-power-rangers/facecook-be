@@ -4,7 +4,6 @@ import com.facecook.chat.websocket.ChatHandshakeHandler;
 import com.facecook.chat.websocket.ChatHandshakeInterceptor;
 import com.facecook.chat.websocket.ChatInboundChannelInterceptor;
 import com.facecook.chat.websocket.ChatStompErrorHandler;
-import com.facecook.mission.websocket.MissionInboundChannelInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -26,7 +25,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final ChatHandshakeInterceptor handshakeInterceptor;
     private final ChatHandshakeHandler handshakeHandler;
     private final ChatInboundChannelInterceptor inboundChannelInterceptor;
-    private final MissionInboundChannelInterceptor missionInboundChannelInterceptor;
     private final ChatStompErrorHandler errorHandler;
 
     @Override
@@ -63,8 +61,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        // 채팅 인터셉터가 모든 CONNECT/SUBSCRIBE에서 세션을 재검증하고
-        // Principal을 설정한 뒤, 미션 인터셉터가 매칭 참가자 권한을 검사한다.
-        registration.interceptors(inboundChannelInterceptor, missionInboundChannelInterceptor);
+        // CONNECT/SUBSCRIBE/SEND마다 세션을 재검증하고, 구독은 허용 목록
+        // (StompSubscriptionPolicy), 전송은 채팅 전송 경로만 통과시킨다.
+        registration.interceptors(inboundChannelInterceptor);
     }
 }

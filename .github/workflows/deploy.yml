@@ -146,6 +146,10 @@ jobs:
             # WebSocket 연결을 닫으며 접속 기록을 지운다(#81, 강제 종료만 하면 기록이 남아 푸시가 막혔다). 30초 안에
             # 안 끝나거나 컨테이너가 없어도 다음 줄의 `rm -f`가 정리한다. 기록이 남는 경우는 애플리케이션의 만료가 처리한다.
             #
+            # 이미지를 받기 전에 실행 중인 컨테이너가 쓰지 않는 이미지를 지운다. 배포마다 새 이미지(약 300MB)가
+            # 쌓이기만 해서 8GB 디스크가 차 pull이 실패한 적이 있다. 받기 전에 지우므로 직전 버전 이미지는 다음
+            # 배포 때까지 남는다. 정리가 실패해도 배포는 계속한다.
+            #
             # 마지막 세 줄이 서버 안 확인이다: 실행 중인 컨테이너가 방금 배포한 이미지에서 만들어졌는지,
             # 프로세스가 떠 있는지, 애플리케이션이 UP을 응답할 때까지(최대 약 3분) 기다린다. 하나라도
             # 어긋나면 명령이 실패해서 아래에서 다음 서버로 넘어가지 않는다.
@@ -153,6 +157,7 @@ jobs:
               commands: [
                 ($refresh_env + " || exit 1"),
                 "aws ecr get-login-password --region \($region) | docker login --username AWS --password-stdin \($ecr) || exit 1",
+                "docker image prune -af || true",
                 "docker pull \($image) || exit 1",
                 "command -v curl >/dev/null || { echo \"서버에 curl이 없어 기동 확인을 할 수 없다\" >&2; exit 1; }",
                 "docker stop -t 30 facecook-app || true",

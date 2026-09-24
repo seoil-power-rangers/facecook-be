@@ -7,6 +7,8 @@ import com.facecook.common.exception.ApiException;
 import com.facecook.common.exception.ErrorCode;
 import com.facecook.common.session.SessionAuthenticationInterceptor;
 import com.facecook.common.session.SessionAuthenticator;
+import com.facecook.common.websocket.StompSubscriptionPolicy;
+import com.facecook.mission.service.MissionAuthorizationService;
 import com.facecook.common.session.SessionCookieService;
 import com.facecook.common.session.SessionToken;
 import com.facecook.common.session.SessionTokenSigner;
@@ -77,7 +79,11 @@ class SuspendedAccountEntryPointsTest {
         SessionAuthenticator sharedPolicy = new SessionAuthenticator(signer, userRepository);
         httpEntry = new SessionAuthenticationInterceptor(sharedPolicy, cookieService);
         handshakeEntry = new ChatHandshakeInterceptor(sharedPolicy, cookieService);
-        stompEntry = new ChatInboundChannelInterceptor(sharedPolicy, chatAuthorizationService);
+        stompEntry = new ChatInboundChannelInterceptor(
+                sharedPolicy,
+                chatAuthorizationService,
+                new StompSubscriptionPolicy(chatAuthorizationService, mock(MissionAuthorizationService.class))
+        );
     }
 
     @Test
