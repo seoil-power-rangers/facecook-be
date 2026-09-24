@@ -202,6 +202,9 @@ facecook-fe는 이 목록을 하드코딩하지 않고 `GET /api/departments`로
 | — | — | 운영시간(09:00~18:00) 외 전송 시 `CLOSED` 에러 반환 |
 | DISCONNECT | — | 연결 종료 시 Redis 접속자 명단에서 제거 |
 
+구독은 위 두 목적지와 `/topic/mission/{matchId}`(미션 진행, 아래 미션 항목) 세 곳만
+허용한다. 그 밖의 목적지를 구독하면 `FORBIDDEN` ERROR frame으로 거절한다.
+
 `/topic/chat/{matchId}`와 `/user/queue/chat-acks`의 메시지 형식은 REST 메시지
 항목과 같다. STOMP 처리 실패는 ERROR frame의 JSON body
 `{ "code": "ERROR_CODE", "message": "..." }`로 반환한다.
@@ -407,9 +410,12 @@ CONNECT에 하트비트(10초 이하)를 설정해야 하며, 일정 시간(약 
 | `UNAUTHORIZED` | 로그인 필요 |
 | `FORBIDDEN` | 권한 없음 (예: 남의 매칭/신고 접근 시도) |
 | `SUSPENDED` | 정지된 계정 |
-| `VALIDATION` | 요청값 오류 |
+| `VALIDATION` | 요청값 오류 (파라미터 타입 불일치·필수 파라미터 누락 포함) |
 | `NOT_FOUND` | 대상 없음 |
 | `INVALID_CREDENTIALS` | 참가자 이메일 또는 비밀번호 불일치(비밀번호 미설정 기존 계정 포함) |
+
+지원하지 않는 HTTP 메서드는 `405`(`Allow` 헤더 포함), 지원하지 않는 Content-Type은
+`415`(`Accept` 헤더 포함)로 본문 없이 응답한다.
 
 ## 11. 이번 문서 범위 밖
 
