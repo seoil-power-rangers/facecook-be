@@ -26,6 +26,29 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+/**
+ * 프로필 API. 내 프로필 작성·조회·수정, 다른 참가자 목록·상세, 탐색 필터, 통계, 학과 목록.
+ *
+ * <table>
+ * <tr><th>API</th><th>서비스</th><th>쓰는 화면(FE)</th></tr>
+ * <tr><td>POST /api/profile/photo/upload-url</td><td>{@link ProfilePhotoUploadService#issueUploadUrl}</td><td>프로필 작성·수정(사진)</td></tr>
+ * <tr><td>POST /api/profile</td><td>{@link ProfileService#create}</td><td>온보딩 마지막 단계</td></tr>
+ * <tr><td>GET /api/profile</td><td>{@link ProfileService#get}(내 userId)</td><td>메인·마이페이지, 온보딩 여부 확인</td></tr>
+ * <tr><td>PATCH /api/profile</td><td>{@link ProfileService#update}</td><td>마이페이지 수정</td></tr>
+ * <tr><td>GET /api/profiles</td><td>{@link ProfileService#getParticipantsExcept}</td><td>탐색</td></tr>
+ * <tr><td>GET /api/profiles/filters</td><td>{@link ProfileService#getFilters}</td><td>탐색 필터</td></tr>
+ * <tr><td>GET /api/profiles/{userId}</td><td>{@link ProfileService#get}</td><td>프로필 상세</td></tr>
+ * <tr><td>GET /api/stats</td><td>{@link ProfileService#getStats}</td><td>메인 "총 사용자"</td></tr>
+ * <tr><td>GET /api/departments</td><td>{@link ProfileService#getDepartments}</td><td>학과 선택</td></tr>
+ * </table>
+ *
+ * <p>모두 {@code /api/**}라 로그인해야 부를 수 있다({@code SessionAuthenticationInterceptor}).
+ * 몇몇 메서드는 {@code @CurrentUser}를 받기만 하고 쓰지 않는데, 로그인 확인은 인터셉터가
+ * 이미 했으므로 이 파라미터가 없어도 동작은 같다({@code /api/departments}가 그 예).</p>
+ *
+ * <p>내 프로필을 바꾸는 API는 경로에 userId를 받지 않고 세션의 userId만 쓴다 — 남의
+ * 프로필을 고치는 요청을 만들 방법 자체가 없다.</p>
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api")

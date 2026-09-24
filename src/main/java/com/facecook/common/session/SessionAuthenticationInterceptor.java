@@ -25,6 +25,10 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
 
     public static final String CURRENT_USER_ATTRIBUTE = "currentUser";
 
+    /**
+     * 로그에 남길 userId를 요청 속성에서 꺼낸다. 인증 전이거나 공개 경로면 null.
+     * 오류 로그({@code GlobalExceptionHandler})와 느린 요청 로그({@code SlowRequestLoggingFilter})가 쓴다.
+     */
     public static Long currentUserId(HttpServletRequest request) {
         Object currentUser = request.getAttribute(CURRENT_USER_ATTRIBUTE);
         return currentUser instanceof AuthenticatedUser authenticatedUser ? authenticatedUser.userId() : null;
@@ -33,6 +37,16 @@ public class SessionAuthenticationInterceptor implements HandlerInterceptor {
     private final SessionAuthenticator authenticator;
     private final SessionCookieService cookieService;
 
+    /**
+     * 컨트롤러가 실행되기 전에 불린다({@code HandlerInterceptor}). 세션 쿠키를 읽어
+     * 인증하고, 성공하면 요청 속성 {@code currentUser}에 {@link AuthenticatedUser}를 넣는다.
+     *
+     * <p>{@code WebConfig}가 {@code /api/**} 전체에 등록하고 로그인·가입 API만 뺀다 —
+     * 그래서 대부분의 컨트롤러는 로그인 확인 코드를 따로 갖지 않는다.</p>
+     *
+     * <p>예외: {@code UNAUTHORIZED}(쿠키 없음·위조·만료·계정 없음), {@code SUSPENDED}(정지 계정 —
+     * 쿠키도 지운다). 여기서 던진 예외도 {@code GlobalExceptionHandler}가 응답으로 바꾼다.</p>
+     */
     @Override
     public boolean preHandle(
             @NonNull HttpServletRequest request,

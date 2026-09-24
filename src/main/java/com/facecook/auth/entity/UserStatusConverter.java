@@ -5,6 +5,7 @@ import jakarta.persistence.Converter;
 
 import java.util.Locale;
 
+/** {@link UserStatus} ↔ DB 소문자 문자열 변환. 만든 이유는 {@link UserRoleConverter}와 같다. */
 @Converter
 public class UserStatusConverter implements AttributeConverter<UserStatus, String> {
 

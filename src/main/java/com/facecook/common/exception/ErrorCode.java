@@ -4,6 +4,18 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 
+/**
+ * API가 돌려줄 수 있는 오류 목록. 각 값이 HTTP 상태와 기본 메시지를 함께 가진다.
+ * 응답 JSON의 {@code code}에는 이 enum의 이름(예: {@code "DAILY_LIMIT"})이
+ * 그대로 들어가고, FE는 메시지 문구가 아니라 이 이름으로 분기한다.
+ *
+ * <p>enum을 쓴 이유: 가능한 오류가 정해진 집합이라 오타로 없는 코드를 만들
+ * 수 없고, 상태 코드와 메시지가 한 줄에 붙어 있어 둘이 따로 놀지 않는다.
+ * {@code @RequiredArgsConstructor}(Lombok)가 {@code (status, message)} 생성자를,
+ * {@code @Getter}가 {@code getStatus()}·{@code getMessage()}를 만들어 준다.</p>
+ *
+ * <p>새 코드를 추가하면 FE 처리와 {@code docs/API명세.md} 에러 코드 표도 같이 본다.</p>
+ */
 @Getter
 @RequiredArgsConstructor
 public enum ErrorCode {

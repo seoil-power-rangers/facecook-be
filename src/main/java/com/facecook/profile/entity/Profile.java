@@ -14,6 +14,17 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/**
+ * 참가자 프로필({@code profile} 테이블). 계정({@code users})과 1:1이고, 기본키가
+ * 곧 {@code user_id}다 — 계정 하나에 프로필은 최대 하나.
+ *
+ * <p>가입({@code users} 생성)과 프로필 작성은 따로 일어난다. 가입만 하고 프로필이 없는
+ * 계정은 FE의 {@code RequireProfile}이 {@code GET /api/profile}의
+ * {@code PROFILE_NOT_FOUND}를 보고 온보딩 화면으로 보낸다.</p>
+ *
+ * <p>{@code createdAt}·{@code updatedAt}은 {@code insertable/updatable = false} — 코드가
+ * 쓰지 않고 DB 기본값({@code CURRENT_TIMESTAMP}, 수정 시 자동 갱신)이 채운다.</p>
+ */
 @Getter
 @Entity
 @Table(name = "profile")

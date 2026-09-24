@@ -5,6 +5,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+/**
+ * {@code POST /api/auth/request-code} 요청 본문. {@code purpose}는 JSON에서
+ * {@code "signup"}/{@code "login"}으로 오고 {@link VerificationPurpose#from}이 enum으로 바꾼다.
+ */
 public record RequestCodeRequest(
         @NotBlank(message = "이메일을 입력해주세요.")
         @Email(message = "올바른 이메일 형식이 아닙니다.")

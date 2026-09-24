@@ -7,10 +7,26 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
 
+/**
+ * {@code @Async} 메서드를 요청 스레드가 아닌 별도 스레드 풀에서 실행하게 켜고,
+ * 용도별 스레드 풀(실행기)을 만든다.
+ *
+ * <p>{@code @Async("이름")}이 붙은 메서드를 다른 빈에서 호출하면, 스프링이 호출을
+ * 가로채 해당 이름의 실행기에 작업을 맡기고 바로 반환한다. 호출한 쪽은 결과를
+ * 기다리지 않는다. 같은 클래스 안에서 {@code this.method()}로 부르면 가로채지
+ * 못해 동기로 실행되니 주의한다.</p>
+ *
+ * <p>실행기를 용도별로 나눈 이유: 한 작업(예: 느린 푸시 서버)이 밀려도 다른
+ * 작업(미션 진행 발행)이 같은 스레드를 기다리지 않게 하기 위해서다.</p>
+ */
 @Configuration
 @EnableAsync
 public class AsyncConfig {
 
+    /**
+     * 미션 진행 상황을 커밋 후 Redis로 발행하는 작업
+     * ({@code MissionProgressCommittedListener}) 전용 실행기.
+     */
     @Bean(name = "missionEventExecutor")
     Executor missionEventExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

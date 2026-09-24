@@ -16,6 +16,23 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+/**
+ * 채팅·미션 실시간 통신(WebSocket + STOMP) 설정.
+ *
+ * <p>STOMP는 WebSocket 위에서 "어느 주소로 보낸다/어느 주소를 구독한다"를
+ * 표현하는 약속이다. 여기서 정하는 주소 규칙:</p>
+ * <ul>
+ * <li>{@code /ws} — 브라우저가 처음 연결하는 주소. 연결 전에 세션 쿠키를 확인한다
+ * ({@code ChatHandshakeInterceptor})</li>
+ * <li>{@code /app/...} — 클라이언트가 보내면 {@code @MessageMapping} 컨트롤러가 받는다
+ * (예: {@code /app/chat/{matchId}/send} → {@code ChatMessageController})</li>
+ * <li>{@code /topic/...}, {@code /queue/...} — 서버 안의 메시지 브로커(SimpleBroker)가
+ * 구독자에게 나눠 준다. 구독할 수 있는 주소는 {@code StompSubscriptionPolicy}가 제한한다</li>
+ * </ul>
+ *
+ * <p>들어오는 모든 STOMP 프레임(CONNECT/SUBSCRIBE/SEND)은 먼저
+ * {@code ChatInboundChannelInterceptor}를 지나며 세션을 다시 확인받는다.</p>
+ */
 @Configuration
 @EnableWebSocketMessageBroker
 @RequiredArgsConstructor

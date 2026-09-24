@@ -34,11 +34,22 @@ public class ProfileActivityLookup {
     private final ProfileActivityProperties properties;
     private final Clock clock;
 
+    /**
+     * 프로필 한 건을 응답으로 바꾼다. 마지막 활동 시각과 "활동 중" 여부를 같이 채운다.
+     * 호출: {@code ProfileService}(작성·조회·수정).
+     */
     public ProfileResponse toResponse(Profile profile) {
         return build(profile, resolveLastActiveAt(profile));
     }
 
-    /** 입력 순서를 그대로 유지한다 — 호출부가 이미 정해둔 정렬(userId 오름차순 등)을 지킨다. */
+    /**
+     * 여러 프로필을 응답으로 바꾼다. 입력 순서를 그대로 유지한다 — 호출부가 이미 정해둔
+     * 정렬(userId 오름차순 등)을 지킨다.
+     *
+     * <p>호출: {@code ProfileService}(탐색 목록), {@code CookService}(콕 목록의 상대 프로필),
+     * {@code MatchService}(매칭 상대 프로필). 모두 {@code @EntityGraph}로 User를 미리 조인한
+     * 목록을 넘긴다.</p>
+     */
     public List<ProfileResponse> toResponses(List<Profile> profiles) {
         return profiles.stream()
                 .map(profile -> build(profile, resolveLastActiveAt(profile)))
