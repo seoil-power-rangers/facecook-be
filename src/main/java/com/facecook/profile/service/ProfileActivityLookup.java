@@ -76,7 +76,7 @@ public class ProfileActivityLookup {
      * GET /api/stats)가 같은 기준을 쓰도록 공개한다.
      *
      * 관리자 통계의 activeToday(AdminStatsService.countActiveUsers())는 이 값을
-     * 쓰지 않고 설정에 따라 따로 센다(기본값은 정지되지 않은 전체 계정).
+     * 쓰지 않고 설정에 따라 따로 센다(기본값은 오늘 자정부터 활동한 계정).
      */
     public LocalDateTime activeSince() {
         return EventTime.now(clock).minusMinutes(properties.activeWindowMinutes());

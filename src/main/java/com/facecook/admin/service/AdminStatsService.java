@@ -71,9 +71,11 @@ public class AdminStatsService {
      * {@code activeToday}를 센다. 설정({@code app.admin.stats.active-user-criterion})에 따라 기준이 다르다.
      *
      * <ul>
-     * <li>{@code STATUS}(기본값): {@code status = active}인 계정 수. 활동 시각을 보지 않으므로 사실상
-     * "정지되지 않은 전체 계정"이고, 관리자·슈퍼 계정도 들어간다.</li>
-     * <li>{@code LAST_ACTIVE_TODAY}: {@code last_active_at}이 오늘(행사 시간대 자정 ~ 다음 날 자정)인 계정 수.</li>
+     * <li>{@code LAST_ACTIVE_TODAY}(기본값): {@code last_active_at}이 오늘(행사 시간대 자정 ~ 다음 날 자정)인 계정 수.
+     * {@code last_active_at}은 인증된 요청마다 30초 간격으로 갱신된다({@code UserActivityService}). 관리자·슈퍼
+     * 계정도 오늘 요청을 보냈으면 들어간다.</li>
+     * <li>{@code STATUS}: {@code status = active}인 계정 수. 활동 시각을 보지 않으므로 사실상
+     * "정지되지 않은 전체 계정"이다.</li>
      * </ul>
      *
      * <p>참가자용 {@code GET /api/stats}의 "활동 중"({@code ProfileActivityLookup#activeSince}, 기본 최근 15분·프로필이

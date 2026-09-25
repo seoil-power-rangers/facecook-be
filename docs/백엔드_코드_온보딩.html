@@ -1161,8 +1161,8 @@ sequenceDiagram
 
 `activeToday`는 `ADMIN_STATS_ACTIVE_USER_CRITERION`(`app.admin.stats.active-user-criterion`)에 따라 센다.
 
-- `STATUS`(기본값): `status = active`인 계정 수. 활동 시각을 보지 않아서 사실상 **정지되지 않은 전체 계정**이다.
-- `LAST_ACTIVE_TODAY`: `last_active_at`이 오늘(행사 시간대 자정부터)인 계정 수. `last_active_at`은 로그인한 요청마다 `ActivityTrackingInterceptor`가 갱신한다.
+- `LAST_ACTIVE_TODAY`(기본값): `last_active_at`이 오늘(행사 시간대 자정부터)인 계정 수. `last_active_at`은 로그인한 요청마다 `ActivityTrackingInterceptor`가 30초 간격으로 갱신한다. 관리자·슈퍼 계정도 오늘 요청을 보냈으면 들어가고, 오늘 활동한 뒤 정지된 계정도 들어간다.
+- `STATUS`: `status = active`인 계정 수. 활동 시각을 보지 않아서 사실상 **정지되지 않은 전체 계정**이다(#121 전의 기본값).
 
 참가자 메인 화면의 &quot;활동 중&quot;(`GET /api/stats`)은 또 다르다 — 최근 15분(기본값) 안에 활동한, **프로필이 있는** 계정 수다(`ProfileActivityLookup.activeSince`). 세 숫자는 세는 대상이 달라서 서로 맞지 않아도 정상이다.
 
@@ -1195,7 +1195,7 @@ sequenceDiagram
 
 #### 관련 테스트
 
-`AdminStatsServiceTest`(기본 `STATUS` 기준, `LAST_ACTIVE_TODAY` 기준), `AdminStatsControllerTest`(관리자 조회, 참가자 거절), `SuperAccountBootstrapTest`(빈 설정, 생성, 비밀번호 갱신·유지, 다른 역할 계정 보호), `SuperAccountControllerTest`(계정·채팅방·메시지 열람, 관리자·참가자 거절).
+`AdminStatsPropertiesTest`(application.yml과 `@DefaultValue`의 기본값이 `LAST_ACTIVE_TODAY`, `STATUS` 선택 가능), `AdminStatsServiceTest`(`STATUS` 기준, `LAST_ACTIVE_TODAY` 기준), `AdminStatsControllerTest`(관리자 조회, 참가자 거절), `SuperAccountBootstrapTest`(빈 설정, 생성, 비밀번호 갱신·유지, 다른 역할 계정 보호), `SuperAccountControllerTest`(계정·채팅방·메시지 열람, 관리자·참가자 거절).
 
 ---
 
@@ -1557,7 +1557,7 @@ curl -s -b /tmp/admin.txt -X POST localhost:8080/api/admin/reports/{reportId}/re
 curl -i -b /tmp/bob.txt localhost:8080/api/auth/me
 ```
 
-5. 관리자 통계를 본다. 기본 설정(`STATUS`)이라 `activeToday`는 정지된 bob을 뺀 전체 계정 수다.
+5. 관리자 통계를 본다. `activeToday`는 오늘 로그인한 상태로 요청을 보낸 계정 수라, 이 실습의 alice·bob·관리자·슈퍼가 모두 들어간다(bob은 정지됐지만 정지 전 오늘 요청한 기록이 남아 있다).
 
 ```bash
 curl -s -b /tmp/admin.txt localhost:8080/api/admin/stats
@@ -2716,8 +2716,8 @@ sequenceDiagram
 
 `activeToday`는 `ADMIN_STATS_ACTIVE_USER_CRITERION`(`app.admin.stats.active-user-criterion`)에 따라 센다.
 
-- `STATUS`(기본값): `status = active`인 계정 수. 활동 시각을 보지 않아서 사실상 **정지되지 않은 전체 계정**이다.
-- `LAST_ACTIVE_TODAY`: `last_active_at`이 오늘(행사 시간대 자정부터)인 계정 수. `last_active_at`은 로그인한 요청마다 `ActivityTrackingInterceptor`가 갱신한다.
+- `LAST_ACTIVE_TODAY`(기본값): `last_active_at`이 오늘(행사 시간대 자정부터)인 계정 수. `last_active_at`은 로그인한 요청마다 `ActivityTrackingInterceptor`가 30초 간격으로 갱신한다. 관리자·슈퍼 계정도 오늘 요청을 보냈으면 들어가고, 오늘 활동한 뒤 정지된 계정도 들어간다.
+- `STATUS`: `status = active`인 계정 수. 활동 시각을 보지 않아서 사실상 **정지되지 않은 전체 계정**이다(#121 전의 기본값).
 
 참가자 메인 화면의 "활동 중"(`GET /api/stats`)은 또 다르다 — 최근 15분(기본값) 안에 활동한, **프로필이 있는** 계정 수다(`ProfileActivityLookup.activeSince`). 세 숫자는 세는 대상이 달라서 서로 맞지 않아도 정상이다.
 
@@ -2750,7 +2750,7 @@ sequenceDiagram
 
 #### 관련 테스트
 
-`AdminStatsServiceTest`(기본 `STATUS` 기준, `LAST_ACTIVE_TODAY` 기준), `AdminStatsControllerTest`(관리자 조회, 참가자 거절), `SuperAccountBootstrapTest`(빈 설정, 생성, 비밀번호 갱신·유지, 다른 역할 계정 보호), `SuperAccountControllerTest`(계정·채팅방·메시지 열람, 관리자·참가자 거절).
+`AdminStatsPropertiesTest`(application.yml과 `@DefaultValue`의 기본값이 `LAST_ACTIVE_TODAY`, `STATUS` 선택 가능), `AdminStatsServiceTest`(`STATUS` 기준, `LAST_ACTIVE_TODAY` 기준), `AdminStatsControllerTest`(관리자 조회, 참가자 거절), `SuperAccountBootstrapTest`(빈 설정, 생성, 비밀번호 갱신·유지, 다른 역할 계정 보호), `SuperAccountControllerTest`(계정·채팅방·메시지 열람, 관리자·참가자 거절).
 
 ---
 
@@ -3112,7 +3112,7 @@ curl -s -b /tmp/admin.txt -X POST localhost:8080/api/admin/reports/{reportId}/re
 curl -i -b /tmp/bob.txt localhost:8080/api/auth/me
 ```
 
-5. 관리자 통계를 본다. 기본 설정(`STATUS`)이라 `activeToday`는 정지된 bob을 뺀 전체 계정 수다.
+5. 관리자 통계를 본다. `activeToday`는 오늘 로그인한 상태로 요청을 보낸 계정 수라, 이 실습의 alice·bob·관리자·슈퍼가 모두 들어간다(bob은 정지됐지만 정지 전 오늘 요청한 기록이 남아 있다).
 
 ```bash
 curl -s -b /tmp/admin.txt localhost:8080/api/admin/stats

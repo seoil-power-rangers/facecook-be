@@ -309,14 +309,13 @@ CONNECT에 하트비트(10초 이하)를 설정해야 하며, 일정 시간(약 
 }
 ```
 
-- `activeToday`는 기본적으로 `users.status = ACTIVE`인 사용자 수다.
-- `ADMIN_STATS_ACTIVE_USER_CRITERION=LAST_ACTIVE_TODAY`로 설정하면
-  `Asia/Seoul` 기준 당일 `last_active_at`이 기록된 사용자 수를 집계한다.
-  `last_active_at`은 인증된 요청마다 갱신되므로(2절 참고) 이 기준을 실제로
-  쓸 수 있다.
-- 이 "하루 단위" 기준은 참가자용 `GET /api/stats`의 `activeNow`(15분 롤링
-  기준)와 일부러 다르다 — 여긴 운영 리포트용, 그쪽은 실시간에 가까운
-  참가자 화면용이라 두 수치가 다르게 나오는 게 정상이다.
+- `activeToday`는 기본적으로 `Asia/Seoul` 기준 당일 `last_active_at`이 기록된
+  계정 수다. `last_active_at`은 인증된 요청마다 30초 간격으로 갱신된다(2절 참고).
+  관리자·슈퍼 계정도 당일 요청을 보냈으면 포함된다.
+- `ADMIN_STATS_ACTIVE_USER_CRITERION=STATUS`로 설정하면 `users.status = ACTIVE`인
+  계정 수(정지되지 않은 전체 계정)를 집계한다.
+- 참가자용 `GET /api/stats`의 `activeNow`(최근 15분, 프로필이 있는 계정)와는
+  세는 대상이 달라서 두 수치가 다르게 나오는 게 정상이다.
 
 ## 8. 슈퍼 계정
 

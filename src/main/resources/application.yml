@@ -72,9 +72,9 @@ app:
     password: ${SUPER_ACCOUNT_PASSWORD:}
   admin:
     stats:
-      # STATUS is the default until last_active_at is updated by user activity.
-      # Set LAST_ACTIVE_TODAY to count activity for the current Asia/Seoul date.
-      active-user-criterion: ${ADMIN_STATS_ACTIVE_USER_CRITERION:STATUS}
+      # LAST_ACTIVE_TODAY counts users whose last_active_at is on the current Asia/Seoul date.
+      # Set STATUS to count every non-suspended user instead.
+      active-user-criterion: ${ADMIN_STATS_ACTIVE_USER_CRITERION:LAST_ACTIVE_TODAY}
   s3:
     bucket: ${S3_BUCKET:}
     region: ${AWS_REGION:ap-northeast-2}
