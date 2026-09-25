@@ -45,7 +45,7 @@ class AdminStatsServiceTest {
     }
 
     @Test
-    void returnsStatsUsingActiveStatusByDefault() {
+    void returnsStatsUsingActiveStatusWhenConfigured() {
         AdminStatsService service = service(ActiveUserCriterion.STATUS);
         when(userRepository.count()).thenReturn(214L);
         when(userRepository.countByStatus(UserStatus.ACTIVE)).thenReturn(200L);
