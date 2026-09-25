@@ -23,8 +23,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import java.util.function.BooleanSupplier;
 
 /**
  * 실제 MySQL 8.4(운영 RDS와 같은 메이저·마이너 버전) 위에서 JPA·Flyway·트랜잭션 잠금을 검증하는 통합 테스트의 공통 기반.
@@ -41,8 +40,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 동시성 테스트는 각 작업이 서비스의 {@code @Transactional} 경계를 그대로 타야 하고, 다른 스레드가
  * 커밋된 데이터를 읽어야 하기 때문이다. 테스트가 만든 데이터는 커밋되므로 스스로 정리한다.</p>
  *
- * <p>잠금 대기 확인: {@link #awaitLockWaiters}는 InnoDB가 "잠금을 기다리는 중"(LOCK WAIT)으로 보고하는
- * 트랜잭션 수를 root 연결로 직접 조회한다. 동시성 테스트가 {@code sleep}으로 "아마 기다리고 있을 것"이라고
+ * <p>잠금 대기 확인: {@link #awaitLockWaiters}는 {@code performance_schema.data_lock_waits}에 있는 잠금 대기
+ * 수를 root 연결로 직접 조회한다. 동시성 테스트가 {@code sleep}으로 "아마 기다리고 있을 것"이라고
  * 추측하지 않고, 두 번째 트랜잭션이 실제로 잠금에서 멈춘 것을 확인한 뒤 첫 트랜잭션을 커밋하게 한다.</p>
  *
  * <p>순서 고정: {@link #firstCommitsBeforeSecond}는 첫 명령을 커밋 전 상태로 붙잡아 두고 두 번째 명령이 잠금 대기에
@@ -75,14 +74,13 @@ public abstract class MySqlIntegrationTestSupport {
         registry.add("spring.datasource.password", MYSQL::getPassword);
     }
 
-
     @Autowired
     protected PlatformTransactionManager transactionManager;
 
     /**
      * 첫 명령을 바깥 트랜잭션 안에서 실행해 잠금을 커밋 전까지 쥐게 한 뒤, 다른 스레드에서 두 번째 명령을 시작한다.
      * 두 번째 명령이 DB에서 잠금 대기(LOCK WAIT) 상태에 들어간 것을 확인한 뒤에야 첫 명령을 커밋한다. 잠금이
-     * 기다리게 하지 못해 두 번째 명령이 커밋 전에 끝나면 실패시키고, 커밋 뒤에 끝난 두 번째 명령의 예외를
+     * 기다리게 하지 못해 두 번째 명령이 커밋 전에 끝나면 그 결과를 원인으로 담아 바로 실패시키고, 커밋 뒤에 끝난 두 번째 명령의 예외를
      * 돌려준다(성공이면 null).
      */
     protected Throwable firstCommitsBeforeSecond(Runnable first, Runnable second) throws Exception {
@@ -100,10 +98,12 @@ public abstract class MySqlIntegrationTestSupport {
                         return throwable;
                     }
                 });
-                awaitLockWaiters(1, LOCK_WAIT_TIMEOUT);
-                assertThat(secondResult[0].isDone())
-                        .as("두 번째 명령은 첫 명령이 커밋될 때까지 잠금으로 기다려야 한다")
-                        .isFalse();
+                awaitLockWaiters(1, LOCK_WAIT_TIMEOUT, secondResult[0]::isDone);
+                if (secondResult[0].isDone()) {
+                    throw new AssertionError(
+                            "두 번째 명령은 첫 명령이 커밋될 때까지 잠금으로 기다려야 하는데 먼저 끝났다",
+                            resultOf(secondResult[0]));
+                }
             });
             return secondResult[0].get(LOCK_WAIT_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         } catch (ExecutionException | TimeoutException exception) {
@@ -113,30 +113,58 @@ public abstract class MySqlIntegrationTestSupport {
         }
     }
 
+    /** 이미 끝난 두 번째 명령의 결과(예외, 성공이면 null)를 꺼낸다. 실패 메시지의 원인으로 붙인다. */
+    private static Throwable resultOf(Future<Throwable> done) {
+        try {
+            return done.get();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return exception;
+        } catch (ExecutionException exception) {
+            return exception.getCause();
+        }
+    }
+
+    /** {@link #awaitLockWaiters(int, Duration, BooleanSupplier)}에서 중간에 멈추는 조건이 없는 형태. */
+    protected static void awaitLockWaiters(int expected, Duration timeout) {
+        awaitLockWaiters(expected, timeout, () -> false);
+    }
+
     /**
-     * 잠금을 기다리는 InnoDB 트랜잭션이 {@code expected}개 이상이 될 때까지 기다린다.
+     * 잠금 대기가 {@code expected}개 이상이 될 때까지, 또는 {@code stopWaiting}이 true가 될 때까지 기다린다.
+     *
+     * <p>대기는 {@code performance_schema.data_lock_waits}(대기 중인 잠금 요청과 그것을 막는 트랜잭션의 쌍)로 센다.
+     * {@code information_schema.innodb_trx}의 {@code LOCK WAIT}는 쓰지 않는다 — 두 번째 트랜잭션이 행 잠금에서
+     * 기다리는데도(쿼리 상태 {@code statistics}, {@code data_locks}에 {@code WAITING}) {@code innodb_trx} 목록에
+     * 아예 나타나지 않는 경우가 로컬 전체 실행에서 재현됐다(#123).</p>
+     *
+     * <p>{@code stopWaiting}: 기다리던 쪽이 대기 없이 먼저 끝났는지 알려 준다. true가 되면 제한 시간을 다 쓰지 않고
+     * 바로 돌아온다. 무엇이 잘못됐는지는 호출부가 그 결과로 판단한다.</p>
      *
      * <p>전제조건: 기다리는 트랜잭션이 이 컨테이너의 DB에서 실행 중이다. 테스트 사용자는 다른 연결의
-     * 트랜잭션을 볼 권한(PROCESS)이 없어서 root 계정으로 별도 연결을 열어 조회한다.</p>
+     * 잠금을 볼 권한이 없어서 root 계정으로 별도 연결을 열어 조회한다.</p>
      *
      * <p>부작용: 없다(조회 전용, 매 호출마다 연결을 열고 닫는다).</p>
      *
      * <p>예외: 제한 시간 안에 조건이 충족되지 않으면 {@link AssertionError}.</p>
      */
-    protected static void awaitLockWaiters(int expected, Duration timeout) {
+    protected static void awaitLockWaiters(int expected, Duration timeout, BooleanSupplier stopWaiting) {
         long deadline = System.nanoTime() + timeout.toNanos();
         try (Connection connection = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", MYSQL.getPassword());
              Statement statement = connection.createStatement()) {
             while (true) {
                 try (ResultSet rows = statement.executeQuery(
-                        "select count(*) from information_schema.innodb_trx where trx_state = 'LOCK WAIT'")) {
+                        "select count(*) from performance_schema.data_lock_waits")) {
                     rows.next();
                     if (rows.getInt(1) >= expected) {
                         return;
                     }
                 }
+                if (stopWaiting.getAsBoolean()) {
+                    return;
+                }
                 if (System.nanoTime() > deadline) {
-                    throw new AssertionError("잠금을 기다리는 트랜잭션이 " + expected + "개 이상 되지 않았다: " + timeout);
+                    throw new AssertionError("잠금 대기가 " + expected + "개 이상 되지 않았다: " + timeout);
                 }
                 Thread.sleep(20);
             }
