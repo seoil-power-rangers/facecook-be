@@ -11,6 +11,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 관리자 대시보드 통계. {@code GET /api/admin/stats} → {@link AdminStatsService#getStats}.
+ * 첫 줄에서 {@code AdminAuthorization.requireAdmin}으로 역할을 확인한다.
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/stats")

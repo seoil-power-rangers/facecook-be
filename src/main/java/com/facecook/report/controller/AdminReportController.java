@@ -19,6 +19,18 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+/**
+ * 관리자용 신고 API. 모든 메서드가 첫 줄에서 {@code AdminAuthorization.requireAdmin}으로 역할을 확인한다
+ * (슈퍼 계정도 여기서 403이다 — 역할이 {@code ADMIN}인지만 본다).
+ *
+ * <table>
+ * <caption>API → 서비스</caption>
+ * <tr><td>GET /api/admin/reports</td><td>{@link ReportService#getAll}</td><td>전체 신고, 최신 접수순</td></tr>
+ * <tr><td>GET /api/admin/reports/{reportId}</td><td>{@link ReportService#get}</td><td>신고 하나</td></tr>
+ * <tr><td>POST /api/admin/reports/{reportId}/resolve</td><td>{@link ReportService#resolve}</td><td>처리 완료(+ 선택적으로 정지)</td></tr>
+ * <tr><td>GET /api/admin/reports/{reportId}/chat</td><td>{@link ReportService#getChat}</td><td>신고자·대상 사이 채팅 이력</td></tr>
+ * </table>
+ */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/admin/reports")
