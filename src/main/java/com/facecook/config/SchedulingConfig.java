@@ -13,6 +13,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * 이 서버가 들고 있는 WebSocket 접속 기록의 만료를 연장</li>
  * <li>{@link com.facecook.push.service.PushDeliveryMonitor#report} — 30초마다 푸시
  * 거절·실패 횟수와 실행기 상태를 로그로 남김(문제가 있을 때만)</li>
+ * <li>{@link com.facecook.common.logging.DbConnectionPoolMonitor#sample}·{@code report} — 1초마다 DB 연결 풀
+ * 상태를 모으고 30초마다 로그로 남김(연결을 기다린 요청이 있었을 때만)</li>
  * </ul>
  */
 @Configuration
