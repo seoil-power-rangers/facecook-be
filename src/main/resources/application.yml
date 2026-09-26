@@ -19,6 +19,16 @@ spring:
       maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
       # 한가할 때 열어 두는 연결 수. 최대값과 같으면 항상 그만큼 열어 둔다.
       minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      # 트랜잭션마다 붙던 설정 명령을 줄인다(#135). 요청 하나(GET /api/cooks)가 DB로 보내는 명령이 로컬 측정에서
+      # 19번 → 11번이 됐다(UserActivityService의 활동 시각 메모리 거르기 포함).
+      # - useLocalSessionState: 드라이버가 연결 상태를 기억해 이미 같은 값이면 설정 명령을 다시 보내지 않는다.
+      # - readOnlyPropagatesToServer=false: 읽기 전용 트랜잭션을 DB에 알리는 SET SESSION TRANSACTION READ ONLY/
+      #   READ WRITE를 보내지 않는다. 읽기 전용 트랜잭션에서 쓰기를 막는 건 Hibernate(flush 안 함)가 계속 맡는다.
+      # 자동 커밋(auto-commit)은 끄지 않는다. 끄면 SET autocommit까지 없어져 7번이 되지만, 트랜잭션 밖에서
+      # JdbcTemplate 등으로 쓴 값이 오류 없이 버려진다(통합 테스트 8개가 실제로 그렇게 실패했다).
+      data-source-properties:
+        useLocalSessionState: true
+        readOnlyPropagatesToServer: false
   jpa:
     hibernate:
       ddl-auto: validate

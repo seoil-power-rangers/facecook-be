@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -47,10 +48,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * 요청마다 매번 이 테이블에 쓰기가 발생한다.
      */
     /*
-     * @Modifying: SELECT가 아닌 UPDATE/DELETE 쿼리라는 표시. 호출하는 쪽에 트랜잭션이
-     * 있어야 한다(UserActivityService#touch가 @Transactional).
+     * @Modifying: SELECT가 아닌 UPDATE/DELETE 쿼리라는 표시. 트랜잭션이 있어야 해서 이 메서드에
+     * @Transactional을 둔다 — 호출하는 UserActivityService#touch는 서버 메모리로 먼저 걸러서
+     * 필요할 때만 여기까지 오므로 트랜잭션을 열지 않는다(#135).
      */
     @Modifying
+    @Transactional
     @Query("UPDATE User u SET u.lastActiveAt = :now WHERE u.id = :id AND (u.lastActiveAt IS NULL OR u.lastActiveAt < :staleBefore)")
     void touchLastActiveAt(
             @Param("id") Long id,
