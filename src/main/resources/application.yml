@@ -91,6 +91,8 @@ app:
   profile:
     activity:
       active-window-minutes: ${PROFILE_ACTIVE_WINDOW_MINUTES:15}
+    # 탐색 목록(참가자 전원)을 서버 메모리에 보관하는 시간(초). 0이면 보관하지 않고 매번 DB에서 읽는다(#133).
+    participant-list-cache-seconds: ${PARTICIPANT_LIST_CACHE_SECONDS:10}
   logging:
     slow-request:
       threshold-ms: ${SLOW_REQUEST_THRESHOLD_MS:500}

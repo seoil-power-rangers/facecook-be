@@ -35,8 +35,9 @@ public interface ProfileRepository extends JpaRepository<Profile, Long> {
     @Override
     List<Profile> findAllById(Iterable<Long> userIds);
 
+    /** 참가자 전원을 userId 오름차순으로. 탐색 목록 보관본을 만들 때 쓴다({@code ParticipantListCache}). */
     @EntityGraph(attributePaths = "user")
-    List<Profile> findAllByUserIdNotOrderByUserIdAsc(Long userId);
+    List<Profile> findAllByOrderByUserIdAsc();
 
     @Query("SELECT COUNT(p) FROM Profile p WHERE p.user.lastActiveAt >= :since")
     long countActiveSince(@Param("since") LocalDateTime since);

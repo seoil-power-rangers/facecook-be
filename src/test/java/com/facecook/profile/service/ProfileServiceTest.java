@@ -36,6 +36,9 @@ class ProfileServiceTest {
     @Mock
     private ProfileActivityLookup activityLookup;
 
+    @Mock
+    private ParticipantListCache participantListCache;
+
     private ProfileService profileService;
 
     @BeforeEach
@@ -52,7 +55,7 @@ class ProfileServiceTest {
                             .map(profile -> ProfileResponse.from(profile, null, false))
                             .toList();
                 });
-        profileService = new ProfileService(profileRepository, photoUrlPolicy, activityLookup);
+        profileService = new ProfileService(profileRepository, photoUrlPolicy, activityLookup, participantListCache);
     }
 
     @Test
@@ -67,6 +70,7 @@ class ProfileServiceTest {
         assertThat(response.nickname()).isEqualTo("cook");
         assertThat(response.idealType()).isEqualTo("다정한 사람");
         verify(profileRepository).saveAndFlush(any(Profile.class));
+        verify(participantListCache).evictAfterCommit();
     }
 
     @Test
@@ -111,6 +115,7 @@ class ProfileServiceTest {
         assertThat(response.department()).isEqualTo("소프트웨어공학과");
         assertThat(response.bio()).isEqualTo("수정된 소개");
         assertThat(response.grade()).isEqualTo("2학년");
+        verify(participantListCache).evictAfterCommit();
     }
 
     @Test
@@ -247,14 +252,12 @@ class ProfileServiceTest {
     }
 
     @Test
-    void listsProfilesExceptCurrentUser() {
-        when(profileRepository.findAllByUserIdNotOrderByUserIdAsc(1L))
-                .thenReturn(List.of(profile(2L, "two"), profile(3L, "three")));
+    void listsProfilesExceptCurrentUserFromTheCache() {
+        List<ProfileResponse> cached = List.of();
+        when(participantListCache.getAllExcept(1L)).thenReturn(cached);
 
-        List<ProfileResponse> responses = profileService.getParticipantsExcept(1L);
-
-        assertThat(responses).extracting(ProfileResponse::userId).containsExactly(2L, 3L);
-        verify(profileRepository).findAllByUserIdNotOrderByUserIdAsc(1L);
+        assertThat(profileService.getParticipantsExcept(1L)).isSameAs(cached);
+        verify(participantListCache).getAllExcept(1L);
     }
 
     private Profile profile(Long userId, String nickname) {

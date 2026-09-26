@@ -124,6 +124,10 @@
 (`app.profile.activity.active-window-minutes`, 기본 15) — 클라이언트가 별도로
 계산하지 않는다.
 
+`GET /api/profiles`(탐색 목록)는 서버가 10초 동안 보관한 목록에서 요청자만 빼고 돌려준다
+(`app.profile.participant-list-cache-seconds`, 기본 10). 그래서 새 참가자·프로필 수정·`isActive`가
+다른 사용자 목록에 최대 10초 늦게 반영될 수 있다. 응답 형태는 같다.
+
 `users.last_active_at`은 인증된 요청마다 갱신되지만, 같은 사용자에 대해
 30초 안에 이미 갱신됐으면 다시 쓰지 않는다(디바운스) — 폴링이 잦은 화면이
 많아 매 요청마다 쓰기를 발생시키지 않기 위함이다.
