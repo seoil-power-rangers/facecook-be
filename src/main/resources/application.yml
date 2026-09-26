@@ -91,6 +91,11 @@ app:
 
 server:
   port: 8080
+  # JSON 응답을 gzip으로 압축한다(클라이언트가 Accept-Encoding: gzip을 보낼 때만, 2KB 이상인 응답만).
+  # 참가자 900명 기준 GET /api/profiles가 압축 없이 약 244KB였다(#125).
+  compression:
+    enabled: true
+    mime-types: application/json
   # 배포(docker stop)의 SIGTERM에 진행 중인 요청을 마치고, WebSocket 세션을 닫아 연결 종료 이벤트가
   # 나게 한다(그래야 접속 기록이 바로 지워진다, #81). Boot 3.4 기본값이지만 배포 스크립트가 여기에
   # 기대므로 명시한다. 종료 대기는 docker stop 타임아웃(30초)보다 짧게 둔다.

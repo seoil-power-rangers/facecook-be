@@ -353,6 +353,8 @@ public ProfileResponse update(Long userId, UpdateProfileRequest request) {
 | `S3_BUCKET`, `AWS_REGION` | 사진 업로드 주소 | 업로드 주소가 잘못 만들어짐 |
 | `COOK_REJECT_ENABLED` | 받은 콕 거절 API | 꺼짐 |
 
+환경변수 없이 파일에 고정된 서버 설정도 있다. `server.compression`은 JSON 응답을 gzip으로 압축한다(클라이언트가 `Accept-Encoding: gzip`을 보낼 때, 2KB 이상인 응답만). 참가자 900명 기준 `GET /api/profiles`가 압축 전 약 226KB, 압축 후 약 8KB였다(#125, 테스트 데이터로 로컬 측정). 압축은 Tomcat이 하므로 `MockMvc` 테스트에는 보이지 않는다 — `ResponseCompressionConfigTest`가 설정값을 확인한다.
+
 **설정을 코드로 받는 방법**: `@ConfigurationProperties(prefix = &quot;app.session&quot;) record SessionProperties(...)`처럼 설정 묶음을 record로 선언하면, 스프링이 설정 파일을 읽어 record를 만들고 빈으로 등록한다. record의 compact 생성자에서 기본값을 채우거나 필수값을 검사한다.
 
 ### 2.9 자주 보는 Java·Lombok 문법과 쓰는 이유
@@ -1907,6 +1909,8 @@ public ProfileResponse update(Long userId, UpdateProfileRequest request) {
 | `SUPER_ACCOUNT_LOGIN`, `SUPER_ACCOUNT_PASSWORD` | 슈퍼 계정 자동 생성 | 슈퍼 계정을 만들지 않음 |
 | `S3_BUCKET`, `AWS_REGION` | 사진 업로드 주소 | 업로드 주소가 잘못 만들어짐 |
 | `COOK_REJECT_ENABLED` | 받은 콕 거절 API | 꺼짐 |
+
+환경변수 없이 파일에 고정된 서버 설정도 있다. `server.compression`은 JSON 응답을 gzip으로 압축한다(클라이언트가 `Accept-Encoding: gzip`을 보낼 때, 2KB 이상인 응답만). 참가자 900명 기준 `GET /api/profiles`가 압축 전 약 226KB, 압축 후 약 8KB였다(#125, 테스트 데이터로 로컬 측정). 압축은 Tomcat이 하므로 `MockMvc` 테스트에는 보이지 않는다 — `ResponseCompressionConfigTest`가 설정값을 확인한다.
 
 **설정을 코드로 받는 방법**: `@ConfigurationProperties(prefix = "app.session") record SessionProperties(...)`처럼 설정 묶음을 record로 선언하면, 스프링이 설정 파일을 읽어 record를 만들고 빈으로 등록한다. record의 compact 생성자에서 기본값을 채우거나 필수값을 검사한다.
 
