@@ -19,15 +19,15 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * application.yml의 DB 연결 풀 크기(#129)를 스프링이 읽는 방식 그대로 {@link HikariConfig}에 바인딩해 확인한다.
+ * application.yml의 DB 연결 풀 크기(#129, #131)를 스프링이 읽는 방식 그대로 {@link HikariConfig}에 바인딩해 확인한다.
  */
 class DataSourcePoolConfigTest {
 
     @Test
-    void defaultsToTwentyConnectionsWithTenKeptIdle() throws IOException {
+    void defaultsToTenConnectionsAllKeptIdle() throws IOException {
         HikariConfig config = bind(Map.of());
 
-        assertThat(config.getMaximumPoolSize()).isEqualTo(20);
+        assertThat(config.getMaximumPoolSize()).isEqualTo(10);
         assertThat(config.getMinimumIdle()).isEqualTo(10);
     }
 
