@@ -13,6 +13,11 @@ spring:
       # 시각 컬럼이 전부 DATETIME이라 이미 저장된 값이나 애플리케이션이 넣는 값은 이 설정으로
       # 바뀌지 않는다. 한국은 서머타임이 없어 고정 오프셋으로 충분하다.
       connection-init-sql: "SET time_zone = '+09:00'"
+      # 서버당 DB 연결 수. 참가자 900명 부하테스트에서 기본값 10개가 모두 쓰여 요청이 연결을 기다렸다(#129).
+      # 서버 2대 × 20개 = 40개로 RDS 최대 연결 수(60개) 안에 둔다. 서버를 늘리면 합계가 60을 넘지 않게 함께 줄인다.
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:20}
+      # 한가할 때 열어 두는 연결 수. 나머지는 몰릴 때만 열고, 한가해지면 닫혀 RDS 메모리를 덜 쓴다.
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
   jpa:
     hibernate:
       ddl-auto: validate
