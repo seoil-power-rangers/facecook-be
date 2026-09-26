@@ -33,6 +33,7 @@ public class ProfileService {
     private final ProfileRepository profileRepository;
     private final ProfilePhotoUrlPolicy photoUrlPolicy;
     private final ProfileActivityLookup activityLookup;
+    private final ParticipantListCache participantListCache;
 
     /**
      * userId의 프로필을 새로 만든다(가입 직후 1회, 유저당 1개).
@@ -59,6 +60,7 @@ public class ProfileService {
 
         try {
             Profile profile = profileRepository.saveAndFlush(Profile.create(userId, toNewProfile(request)));
+            participantListCache.evictAfterCommit();
             return activityLookup.toResponse(profile);
         } catch (DataIntegrityViolationException exception) {
             throw new ApiException(ErrorCode.PROFILE_ALREADY_EXISTS, exception);
@@ -107,6 +109,7 @@ public class ProfileService {
 
         Profile profile = findProfile(userId);
         profile.update(toEdit(request));
+        participantListCache.evictAfterCommit();
         return activityLookup.toResponse(profile);
     }
 
@@ -116,17 +119,16 @@ public class ProfileService {
      *
      * <p>전제조건: 없음.</p>
      *
-     * <p>부작용: 없음. 페이지네이션이 없어 전체를 한 번에 반환한다 —
-     * 참가자 규모(수백 명)에서는 부담 없지만 규모가 커지면 손봐야
-     * 한다.</p>
+     * <p>부작용: 없음. 페이지네이션이 없어 전체를 한 번에 반환한다. 목록은 {@link ParticipantListCache}가
+     * 서버 메모리에 잠깐(기본 10초) 보관해 재사용한다 — 보관본이 있으면 DB에 가지 않고, 트랜잭션도 열지
+     * 않는다. 그래서 이 메서드에는 {@code @Transactional}을 두지 않는다(#133).</p>
      *
      * <p>예외 없음.</p>
      *
      * @see #get(Long)
      */
-    @Transactional(readOnly = true)
     public List<ProfileResponse> getParticipantsExcept(Long userId) {
-        return activityLookup.toResponses(profileRepository.findAllByUserIdNotOrderByUserIdAsc(userId));
+        return participantListCache.getAllExcept(userId);
     }
 
     /**
